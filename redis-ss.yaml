@@ -1,0 +1,644 @@
+# STORAGE CLASS
+# ... delay volume binding until pods are scheduled
+# refs: 
+#   https://kubernetes.io/docs/concepts/storage/storage-classes/#local
+#   https://kubernetes.io/blog/2018/04/13/local-persistent-volumes-beta/
+#   https://github.com/lusyoe/k8s-local-storage
+#   https://suraj.pro/post/hostmount-minikube/
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local
+  labels:
+    type: local
+    tier: infra
+  annotations:
+    storageclass.beta.kubernetes.io/is-default-class: "true"
+#provisioner: kubernetes.io/no-provisioner
+provisioner: k8s.io/minikube-hostpath
+parameters:
+  pool: default
+  description: Kubernetes volume
+  fsType: ext4
+  adminSecretNamespace: default
+  adminSecretName: localos-secret
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+---
+# PERSISTENT VOLUMES
+# refs:
+#   https://kubernetes.io/docs/concepts/storage/volumes/#local
+#   https://kubernetes.io/docs/tasks/configure-pod-container/configure-persistent-volume-storage
+#   https://kubernetes.io/blog/2018/04/13/local-persistent-volumes-beta/
+#   https://akomljen.com/kubernetes-persistent-volumes-with-deployment-and-statefulset/
+#   https://kubernetes.io/docs/concepts/storage/persistent-volumes/#class-1
+#   https://github.com/lusyoe/k8s-local-storage
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv1
+  labels:
+    app: redis
+    bind: redis
+    tier: infra
+  annotations:
+    #pv.beta.kubernetes.io/gid: "1234"
+    "volume.alpha.kubernetes.io/node-affinity": '{
+      "requiredDuringSchedulingIgnoredDuringExecution": {
+        "nodeSelectorTerms": [
+          { "matchExpressions": [
+              { "key": "kubernetes.io/hostname",
+                "operator": "In",
+                "values": ["minikube"]
+              }
+          ]}
+        ]}}'
+spec:
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete #Retain
+  storageClassName: local
+  hostPath:
+    type: DirectoryOrCreate
+    path: /tmp/redis-pv1
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv2
+  labels:
+    app: redis
+    bind: redis
+    tier: infra
+  annotations:
+    #pv.beta.kubernetes.io/gid: "1234"
+    "volume.alpha.kubernetes.io/node-affinity": '{
+      "requiredDuringSchedulingIgnoredDuringExecution": {
+        "nodeSelectorTerms": [
+          { "matchExpressions": [
+              { "key": "kubernetes.io/hostname",
+                "operator": "In",
+                "values": ["minikube"]
+              }
+          ]}
+        ]}}'
+spec:
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete #Retain
+  storageClassName: local
+  hostPath:
+    type: DirectoryOrCreate
+    path: /tmp/redis-pv2
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv3
+  labels:
+    app: redis
+    bind: redis
+    tier: infra
+  annotations:
+    #pv.beta.kubernetes.io/gid: "1234"
+    "volume.alpha.kubernetes.io/node-affinity": '{
+      "requiredDuringSchedulingIgnoredDuringExecution": {
+        "nodeSelectorTerms": [
+          { "matchExpressions": [
+              { "key": "kubernetes.io/hostname",
+                "operator": "In",
+                "values": ["minikube"]
+              }
+          ]}
+        ]}}'
+spec:
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete #Retain
+  storageClassName: local
+  hostPath:
+    type: DirectoryOrCreate
+    path: /tmp/redis-pv3
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv4
+  labels:
+    app: redis
+    bind: redis
+    tier: infra
+  annotations:
+    #pv.beta.kubernetes.io/gid: "1234"
+    "volume.alpha.kubernetes.io/node-affinity": '{
+      "requiredDuringSchedulingIgnoredDuringExecution": {
+        "nodeSelectorTerms": [
+          { "matchExpressions": [
+              { "key": "kubernetes.io/hostname",
+                "operator": "In",
+                "values": ["minikube"]
+              }
+          ]}
+        ]}}'
+spec:
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete #Retain
+  storageClassName: local
+  hostPath:
+    type: DirectoryOrCreate
+    path: /tmp/redis-pv4
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv5
+  labels:
+    app: redis
+    bind: redis
+    tier: infra
+  annotations:
+    #pv.beta.kubernetes.io/gid: "1234"
+    "volume.alpha.kubernetes.io/node-affinity": '{
+      "requiredDuringSchedulingIgnoredDuringExecution": {
+        "nodeSelectorTerms": [
+          { "matchExpressions": [
+              { "key": "kubernetes.io/hostname",
+                "operator": "In",
+                "values": ["minikube"]
+              }
+          ]}
+        ]}}'
+spec:
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete #Retain
+  storageClassName: local
+  hostPath:
+    type: DirectoryOrCreate
+    path: /tmp/redis-pv5
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv6
+  labels:
+    app: redis
+    bind: redis
+    tier: infra
+  annotations:
+    #pv.beta.kubernetes.io/gid: "1234"
+    "volume.alpha.kubernetes.io/node-affinity": '{
+      "requiredDuringSchedulingIgnoredDuringExecution": {
+        "nodeSelectorTerms": [
+          { "matchExpressions": [
+              { "key": "kubernetes.io/hostname",
+                "operator": "In",
+                "values": ["minikube"]
+              }
+          ]}
+        ]}}'
+spec:
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete #Retain
+  storageClassName: local
+  hostPath:
+    type: DirectoryOrCreate
+    path: /tmp/redis-pv6
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+  hostPath:
+    type: DirectoryOrCreate
+    path: /tmp/redis-pv6
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+---
+#SERVICE
+# refs:
+#   https://schoolofdevops.github.io/ultimate-kubernetes-bootcamp/13_redis_statefulset
+#   https://kubernetes.io/docs/tasks/run-application/run-replicated-stateful-application/#deploy-redis
+#   https://github.com/sobotklp/kubernetes-redis-cluster/blob/master/redis-cluster.yml
+#   https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#components
+#   https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#a-records
+
+## Headless service for stable dns names
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  annotations:
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: "false"
+  labels:
+    app: redis
+spec:
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: redis
+  - port: 16379
+    targetPort: 16379
+    name: gossip
+#  type: ClusterIp
+  selector:
+    app: redis
+    tier: backend
+    role: master
+---
+# CONFIGMAPS
+# refs:
+#    https://raw.githubusercontent.com/kubernetes/examples/master/staging/storage/redis/image/redis-master.conf
+#    https://raw.githubusercontent.com/kubernetes/examples/master/staging/storage/redis/image/redis-slave.conf
+#    https://schoolofdevops.github.io/ultimate-kubernetes-bootcamp/13_redis_statefulset
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: env-config
+  namespace: default
+data:
+  REDIS_HOST: 'redis.default.svc.cluster.local'
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis
+data:
+  master.conf: |-
+    activerehashing yes
+    aof-load-truncated yes
+    aof-rewrite-incremental-fsync yes
+    appendfilename "appendonly.aof"
+    appendfsync everysec
+    appendonly yes
+    auto-aof-rewrite-min-size 64mb
+    auto-aof-rewrite-percentage 100
+    bind 0.0.0.0
+    client-output-buffer-limit normal 0 0 0
+    client-output-buffer-limit pubsub 32mb 8mb 60
+    client-output-buffer-limit slave 256mb 64mb 60
+    daemonize no
+    databases 16
+    dbfilename dump.rdb
+    dir /redis-master-data
+    hash-max-ziplist-entries 512
+    hash-max-ziplist-value 64
+    hll-sparse-max-bytes 3000
+    hz 10
+    latency-monitor-threshold 0
+    list-max-ziplist-entries 512
+    list-max-ziplist-value 64
+    logfile ""
+    loglevel notice
+    lua-time-limit 5000
+    no-appendfsync-on-rewrite no
+    notify-keyspace-events ""
+    pidfile /var/run/redis_6379.pid  ###redis.pid
+    port 6379
+    protected-mode yes
+    rdbchecksum yes
+    rdbcompression yes
+    repl-disable-tcp-nodelay no
+    repl-diskless-sync no
+    repl-diskless-sync-delay 5
+    save 300 10
+    save 60 10000
+    save 900 1
+    set-max-intset-entries 512
+    slave-priority 100
+    slave-read-only yes
+    slave-serve-stale-data yes
+    slowlog-log-slower-than 10000
+    slowlog-max-len 128
+    stop-writes-on-bgsave-error yes
+    supervised no
+    tcp-backlog 511
+    tcp-keepalive 300 ##60
+    timeout 0
+    zset-max-ziplist-entries 128
+    zset-max-ziplist-value 64
+  slave.conf: |-
+    activerehashing yes
+    aof-load-truncated yes
+    aof-rewrite-incremental-fsync yes
+    appendfilename "appendonly.aof"
+    appendfsync everysec
+    appendonly yes
+    auto-aof-rewrite-min-size 64mb
+    auto-aof-rewrite-percentage 100
+    bind 0.0.0.0
+    client-output-buffer-limit normal 0 0 0
+    client-output-buffer-limit pubsub 32mb 8mb 60
+    client-output-buffer-limit slave 256mb 64mb 60
+    cluster-enabled yes
+    cluster-require-full-coverage no
+    cluster-node-timeout 15000
+    cluster-config-file nodes.conf
+    cluster-migration-barrier 1 
+    daemonize no
+    databases 16
+    dbfilename dump.rdb
+    dir "./"
+    hash-max-ziplist-entries 512
+    hash-max-ziplist-value 64
+    hll-sparse-max-bytes 3000
+    hz 10
+    latency-monitor-threshold 0
+    list-max-ziplist-entries 512
+    list-max-ziplist-value 64
+    logfile ""
+    loglevel notice
+    lua-time-limit 5000
+    no-appendfsync-on-rewrite no
+    notify-keyspace-events ""
+    pidfile /var/run/redis.pid
+    port 6379
+    # Other cluster members need to be able to connect
+    protected-mode no
+    rdbchecksum yes
+    rdbcompression yes
+    repl-disable-tcp-nodelay no
+    repl-diskless-sync no
+    repl-diskless-sync-delay 5
+    save 300 10
+    save 60 10000
+    save 900 1
+    set-max-intset-entries 512
+    slave-priority 100
+    slave-read-only yes
+    slave-serve-stale-data yes
+    slaveof redis-0.redis 6379    ###### %master-ip% %master-port%
+    slowlog-log-slower-than 10000
+    slowlog-max-len 128
+    stop-writes-on-bgsave-error yes
+    tcp-backlog 511
+    tcp-keepalive 60
+    timeout 0
+    zset-max-ziplist-entries 128
+    zset-max-ziplist-value 64
+---
+#SECRETS
+# refs:
+#    https://kubernetes.io/docs/concepts/configuration/secret/#creating-a-secret-manually
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis
+type: Opaque
+data:
+  REDIS_USER: YWRtaW4=
+  REDIS_PASS: YWRtaW4=
+stringData:
+  REDIS_USER: admin
+  REDIS_PASS: admin
+#---
+#apiVersion: v1
+#kind: Secret
+#metadata:
+#  name: dotfile-secret
+#data:
+#  .secret-file: dmFsdWUtMg0KDQo=
+#---
+#apiVersion: v1
+#kind: Pod
+#metadata:
+#  name: secret-dotfiles-pod
+#spec:
+#  volumes:
+#  - name: secret-volume
+#    secret:
+#      secretName: dotfile-secret
+#  containers:
+#  - name: dotfile-test-container
+#    image: k8s.gcr.io/busybox
+#    command:
+#    - ls
+#    - "-l"
+#    - "/etc/secret-volume"
+#    volumeMounts:
+#    - name: secret-volume
+#      readOnly: true
+#      mountPath: "/etc/secret-volume"
+---
+# STATEFULSET
+# refs:
+#    https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/#creating-a-statefulset
+#    https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#using-statefulsets
+#    https://kubernetes.io/docs/tutorials/stateful-application/cassandra/#using-a-statefulset-to-create-a-cassandra-ring
+#    https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+#    https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+#    https://akomljen.com/kubernetes-persistent-volumes-with-deployment-and-statefulset/
+#    https://raw.githubusercontent.com/kubernetes/examples/master/staging/storage/redis/redis-master.yaml
+#    https://estl.tech/deploying-redis-with-persistence-on-google-kubernetes-engine-c1d60f70a043
+#    https://kubernetes.io/docs/tutorials/configuration/configure-redis-using-configmap/
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  labels:
+    app: redis
+    tier: backend
+spec:
+  serviceName: redis
+  replicas: 3
+  ##podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: redis
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: redis
+        tier: backend
+    spec:
+      terminationGracePeriodSeconds: 70
+      initContainers:
+      - name: init-redis
+        image: redis:3.2.10-alpine
+        command:
+          - bash
+          - "-c"
+          - |
+            set -ex
+            # Generate redis server-id from pod ordinal index.
+            [[ `hostname` =~ -([0-9]+)$ ]] || exit 1
+            ordinal=${BASH_REMATCH[1]}
+            echo [redisd] > /mnt/conf.d/server-id.cnf
+            # Add an offset to avoid reserved server-id=0 value.
+            echo server-id=$((100 + $ordinal)) >> /mnt/conf.d/server-id.cnf
+            # Copy appropriate conf.d files from config-map to emptyDir.
+            if [[ $ordinal -eq 0 ]]; then
+              cp /mnt/config-map/master.cnf /etc/redis.conf
+            else
+              cp /mnt/config-map/slave.cnf /etc/redis.conf
+            fi
+        volumeMounts:
+          - name: conf
+            mountPath: /etc
+            subPath: redis.conf
+          - name: config-map
+            mountPath: /mnt/config-map
+
+      containers:
+      - name: redis
+        image: redis:3.2.10-alpine
+        imagePullPolicy: Always
+        command:
+          - redis-server
+          - /etc/redis.conf
+        env:
+        - name: ALLOW_EMPTY_PASSWORD
+          value: "yes"
+        - name: REDIS_PASS
+          valueFrom:
+            secretKeyRef:
+              name: redis
+              key: REDIS_PASS
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: env-config
+              key: REDIS_HOST
+        ports:
+        - name: redis
+          containerPort: 6379
+        resources:
+          limits:
+            memory: 500Mi
+        securityContext:
+          capabilities:
+            add:
+              - IPC_LOCK
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - '-c'
+              - echo 'goodbye world'
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - "redis-cli -h $(hostname) ping"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            # Check we can execute queries over TCP (skip-networking is off).
+            command: ["redis", "-h", "127.0.0.1", "ping"]
+          initialDelaySeconds: 30
+          periodSeconds: 2
+          timeoutSeconds: 1
+          failureThreshold: 3
+
+# https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims
+# https://kubernetes.io/blog/2018/04/13/local-persistent-volumes-beta/
+# https://kubernetes.io/blog/2018/10/11/topology-aware-volume-provisioning-in-kubernetes/
+# https://github.com/lusyoe/k8s-local-storage
+
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: conf
+          mountPath: /etc/
+          subPath: redis.conf
+      volumes:
+      - name: conf
+        emptyDir: {}
+      - name: config-map
+        configMap:
+          name: redis
+
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        annotations:
+          volume.beta.kubernetes.io/storage-class: local
+      spec:
+        storageClassName: local
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 500m
+        selector:
+          matchLabels:
+            bind: redis
