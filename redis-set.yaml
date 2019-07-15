@@ -292,7 +292,7 @@ spec:
 #   https://kubernetes.io/docs/tasks/run-application/run-replicated-stateful-application/#deploy-redis
 #   https://github.com/sobotklp/kubernetes-redis-cluster/blob/master/redis-cluster.yml
 #   https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#components
-#   https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/#a-records
+#   https://kubernetes.io/docs/concepts/mnt/config-maps-networking/dns-pod-service/#a-records
 
 ## Headless service for stable dns names
 apiVersion: v1
@@ -336,118 +336,94 @@ kind: ConfigMap
 metadata:
   name: redis
 data:
+  # Apply this config only on the master.
   master.conf: |-
-    activerehashing yes
-    aof-load-truncated yes
-    aof-rewrite-incremental-fsync yes
-    appendfilename "appendonly.aof"
-    appendfsync everysec
-    appendonly yes
-    auto-aof-rewrite-min-size 64mb
-    auto-aof-rewrite-percentage 100
-    bind 0.0.0.0
-    client-output-buffer-limit normal 0 0 0
-    client-output-buffer-limit pubsub 32mb 8mb 60
-    client-output-buffer-limit slave 256mb 64mb 60
-    daemonize no
-    databases 16
-    dbfilename dump.rdb
-    dir /redis-master-data
-    hash-max-ziplist-entries 512
-    hash-max-ziplist-value 64
-    hll-sparse-max-bytes 3000
-    hz 10
-    latency-monitor-threshold 0
-    list-max-ziplist-entries 512
-    list-max-ziplist-value 64
-    logfile ""
-    loglevel notice
-    lua-time-limit 5000
-    no-appendfsync-on-rewrite no
-    notify-keyspace-events ""
-    pidfile /var/run/redis_6379.pid  ###redis.pid
-    port 6379
-    protected-mode yes
-    rdbchecksum yes
-    rdbcompression yes
-    repl-disable-tcp-nodelay no
-    repl-diskless-sync no
-    repl-diskless-sync-delay 5
-    save 300 10
-    save 60 10000
-    save 900 1
-    set-max-intset-entries 512
-    slave-priority 100
-    slave-read-only yes
-    slave-serve-stale-data yes
-    slowlog-log-slower-than 10000
-    slowlog-max-len 128
-    stop-writes-on-bgsave-error yes
-    supervised no
-    tcp-backlog 511
-    tcp-keepalive 300 ##60
-    timeout 0
-    zset-max-ziplist-entries 128
-    zset-max-ziplist-value 64
-  slave.conf: |-
-    activerehashing yes
-    aof-load-truncated yes
-    aof-rewrite-incremental-fsync yes
-    appendfilename "appendonly.aof"
-    appendfsync everysec
-    appendonly yes
-    auto-aof-rewrite-min-size 64mb
-    auto-aof-rewrite-percentage 100
-    bind 0.0.0.0
-    client-output-buffer-limit normal 0 0 0
-    client-output-buffer-limit pubsub 32mb 8mb 60
-    client-output-buffer-limit slave 256mb 64mb 60
     cluster-enabled yes
     cluster-require-full-coverage no
     cluster-node-timeout 15000
     cluster-config-file nodes.conf
-    cluster-migration-barrier 1 
-    daemonize no
-    databases 16
-    dbfilename dump.rdb
-    dir "./"
-    hash-max-ziplist-entries 512
-    hash-max-ziplist-value 64
-    hll-sparse-max-bytes 3000
-    hz 10
-    latency-monitor-threshold 0
-    list-max-ziplist-entries 512
-    list-max-ziplist-value 64
-    logfile ""
-    loglevel notice
-    lua-time-limit 5000
-    no-appendfsync-on-rewrite no
-    notify-keyspace-events ""
-    pidfile /var/run/redis.pid
-    port 6379
+    cluster-migration-barrier 1
+    appendonly yes
     # Other cluster members need to be able to connect
     protected-mode no
-    rdbchecksum yes
-    rdbcompression yes
-    repl-disable-tcp-nodelay no
-    repl-diskless-sync no
-    repl-diskless-sync-delay 5
-    save 300 10
-    save 60 10000
-    save 900 1
-    set-max-intset-entries 512
-    slave-priority 100
-    slave-read-only yes
-    slave-serve-stale-data yes
-    slaveof redis-0.redis 6379    ###### %master-ip% %master-port%
-    slowlog-log-slower-than 10000
-    slowlog-max-len 128
-    stop-writes-on-bgsave-error yes
-    tcp-backlog 511
-    tcp-keepalive 60
-    timeout 0
-    zset-max-ziplist-entries 128
-    zset-max-ziplist-value 64
+
+  # Apply this config only on the slaves.
+  slave.conf: |-
+    cluster-enabled yes
+    cluster-require-full-coverage no
+    cluster-node-timeout 15000
+    cluster-config-file nodes.conf
+    cluster-migration-barrier 1
+    appendonly yes
+    # Other cluster members need to be able to connect
+    protected-mode no
+
+# refs:
+#   https://schoolofdevops.github.io/ultimate-kubernetes-bootcamp/13_redis_statefulset
+#   https://github.com/sobotklp/kubernetes-redis-cluster/blob/master/redis-cluster.yml#L44
+#   https://github.com/sobotklp/kubernetes-redis-cluster/blob/master/redis-cluster.yml
+#   https://github.com/sobotklp/kubernetes-redis-cluster/blob/master/redis-cluster.yml
+
+  init.sh: |+
+    set -e
+    ###############################################################
+    ## Bootstrap Stateful Set members (requires /etc/podinfo)
+    ###############################################################
+    if [ -f /etc/podinfo/pod_name ]; then
+        ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
+    else
+        ORDINAL=1 && [ ${HOSTNAME} == 'redis-0' ] && ORDINAL=0
+    fi
+
+        ## Copy service config from config-map to emptyDir
+    if [ "$ORDINAL" -eq "0" ];then
+       cp /mnt/config-map/master.conf /mnt/conf.d/redis.conf
+    else
+       cp /mnt/config-map/slave.conf /mnt/conf.d/redis.conf
+    fi
+    cp /mnt/config-map/run.sh /mnt/conf.d/run.sh || true
+
+    ## peer-finder tool
+    if [ -x /bin/wget ]; then
+        wget https://storage.googleapis.com/kubernetes-release/pets/peer-finder -O /mnt/conf.d/peer-finder
+        chmod u+x /mnt/conf.d/peer-finder
+    fi
+    ### If you wait to do everything until you're sure it's right,
+    ### you'll probably never do much of anything” ~ Win Borden
+    wait
+
+  run.sh: |+
+    set -e
+    ##############################################################
+    ## Start service, discover peers, join cluster (good luck)
+    ##############################################################
+    /usr/local/bin/redis-server /etc/redis/conf.d/redis.conf &
+    sleep 2
+    if [ -x /etc/redis/conf.d/peer-finder ]; then
+        /etc/redis/conf.d/peer-finder -on-start 'tee > /etc/redis/initial_peers' -service redis-cluster -ns $POD_NAMESPACE
+    fi
+    if [ -f /etc/podinfo/pod_name ]; then
+        ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
+    else
+        ORDINAL=1 && [ "${HOSTNAME}" == 'redis-0' ] && ORDINAL=0
+    fi
+    if [ "$ORDINAL" -eq "0" ]; then
+        ## Controllers
+        /usr/local/bin/redis-cli cluster addslots "$(seq 0 16383)"
+    else
+        /usr/local/bin/redis-cli cluster addslots "$(seq 0 16383)"
+        # Slaves of a random master
+        PEER_IP="$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')"
+        if [ -n "${PEER_IP}" ]; then
+            /usr/local/bin/redis-cli cluster meet ${PEER_IP} 6379
+            sleep 1 
+            MASTER_ID="$( redis-cli --csv cluster slots | cut -d, -f 5 | sed -e 's/^"//'  -e 's/"$//' )"
+            /usr/local/bin/redis-cli cluster replicate $MASTER_ID
+        fi
+    fi
+    ### If you wait to do everything until you're sure it's right,
+    ### you'll probably never do much of anything” ~ Win Borden
+    wait
 ---
 #SECRETS
 # refs:
@@ -486,6 +462,7 @@ stringData:
 #    image: k8s.gcr.io/busybox
 #    command:
 #    - ls
+#    args:
 #    - "-l"
 #    - "/etc/secret-volume"
 #    volumeMounts:
@@ -515,7 +492,7 @@ metadata:
 spec:
   serviceName: redis
   replicas: 3
-  ##podManagementPolicy: Parallel
+  podManagementPolicy: Parallel
   selector:
     matchLabels:
       app: redis
@@ -526,41 +503,38 @@ spec:
         app: redis
         tier: backend
     spec:
-      terminationGracePeriodSeconds: 70
+      terminationGracePeriodSeconds: 5
       initContainers:
-      - name: init-redis
+      - name: init
         image: redis:3.2.10-alpine
         command:
-          - bash
-          - "-c"
-          - |
-            set -ex
-            # Generate redis server-id from pod ordinal index.
-            [[ `hostname` =~ -([0-9]+)$ ]] || exit 1
-            ordinal=${BASH_REMATCH[1]}
-            echo [redisd] > /mnt/conf.d/server-id.cnf
-            # Add an offset to avoid reserved server-id=0 value.
-            echo server-id=$((100 + $ordinal)) >> /mnt/conf.d/server-id.cnf
-            # Copy appropriate conf.d files from config-map to emptyDir.
-            if [[ $ordinal -eq 0 ]]; then
-              cp /mnt/config-map/master.cnf /etc/redis.conf
-            else
-              cp /mnt/config-map/slave.cnf /etc/redis.conf
-            fi
+        - sh
+        - /mnt/config-map/init.sh
         volumeMounts:
-          - name: conf
-            mountPath: /etc
-            subPath: redis.conf
-          - name: config-map
-            mountPath: /mnt/config-map
+        - name: conf
+          mountPath: /mnt/conf.d
+          readOnly: false
+        - name: config-map
+          mountPath: /mnt/config-map
+        - name: podinfo
+          mountPath: /etc/podinfo
+          readOnly: false
 
       containers:
       - name: redis
         image: redis:3.2.10-alpine
-        imagePullPolicy: Always
+        #imagePullPolicy: Always
         command:
-          - redis-server
-          - /etc/redis.conf
+        - sh
+        - /etc/redis/conf.d/run.sh
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/redis/conf.d
+          readOnly: false
+        - name: data
+          mountPath: /var/lib/redis
+          subPath: redis
+          readOnly: false
         env:
         - name: ALLOW_EMPTY_PASSWORD
           value: "yes"
@@ -574,16 +548,18 @@ spec:
             configMapKeyRef:
               name: env-config
               key: REDIS_HOST
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         ports:
         - name: redis
           containerPort: 6379
         resources:
           limits:
             memory: 500Mi
-        securityContext:
-          capabilities:
-            add:
-              - IPC_LOCK
+          requests:
+            memory: 500Mi
         lifecycle:
           preStop:
             exec:
@@ -594,7 +570,7 @@ spec:
         livenessProbe:
           exec:
             command:
-            - sh
+            - /bin/sh
             - -c
             - "redis-cli -h $(hostname) ping"
           initialDelaySeconds: 30
@@ -613,20 +589,29 @@ spec:
 # https://kubernetes.io/docs/concepts/storage/persistent-volumes/#persistentvolumeclaims
 # https://kubernetes.io/blog/2018/04/13/local-persistent-volumes-beta/
 # https://kubernetes.io/blog/2018/10/11/topology-aware-volume-provisioning-in-kubernetes/
-# https://github.com/lusyoe/k8s-local-storage
 
-        volumeMounts:
-        - name: data
-          mountPath: /data
-        - name: conf
-          mountPath: /etc/
-          subPath: redis.conf
       volumes:
       - name: conf
         emptyDir: {}
       - name: config-map
         configMap:
           name: redis
+      - name: podinfo
+        ## init containers may use this to find cluster peers
+        downwardAPI:
+          items:
+            - path: "labels"
+              fieldRef:
+                fieldPath: metadata.labels
+            - path: "annotations"
+              fieldRef:
+                fieldPath: metadata.annotations
+            - path: "pod_name"
+              fieldRef:
+                fieldPath: metadata.name
+            - path: "pod_namespace"
+              fieldRef:
+                fieldPath: metadata.namespace
 
   volumeClaimTemplates:
     - metadata:

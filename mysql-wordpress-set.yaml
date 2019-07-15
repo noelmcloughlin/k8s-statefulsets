@@ -604,7 +604,7 @@ spec:
         app: mysql
         tier: backend
     spec:
-      terminationGracePeriodSeconds: 1800
+      terminationGracePeriodSeconds: 5
       initContainers:
       - name: init-mysql
         image: mysql:5.6

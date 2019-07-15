@@ -1,11 +1,7 @@
- MINIKUBE NOTES
- --------------
- ref: https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates etc...
-
-
+   MINIKUBE NOTES
+   **************
 
 *  MACOS
-
    rm -f ~/.minikube
    brew install hyperkit docker-machine-driver-hyperkit
    sudo chown root:wheel /usr/local/bin/docker-machine-driver-hyperkit
@@ -14,7 +10,27 @@
    minikube config set vm-driver hyperkit && minikube start --cpus 4 --memory 6144 --feature-gates="AllAlpha=true,BoundServiceAccountTokenVolume=false"
 
 
-
 *  LINUX
-
    minikube start --cpus 4 --memory 6144 --feature-gates="AllAlpha=true,BoundServiceAccountTokenVolume=false"
+
+
+*  CLEANUP (pv/pvc's stuck terminating?)
+
+   kubectl delete -f .; kubectl delete pods --all --force --grace-period=0; kubectl delete pvc --all --force --grace-period=0; kubectl delete pv --all --force --grace-period=0; kubectl get all
+
+
+  ************
+  STATEFULSETS
+  ************
+
+* WP/MYSQL
+
+  kubectl apply -f mysql-wordpress-set.yaml
+  kubectl delete -f mysql-wordpress-set.yaml 
+
+
+* REDIS
+
+  kubectl apply -f redis-set.yaml
+  kubectl delete -f redis-set.yaml
+
