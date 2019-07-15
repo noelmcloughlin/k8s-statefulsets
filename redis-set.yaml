@@ -360,8 +360,6 @@ data:
 
 # refs:
 #   https://schoolofdevops.github.io/ultimate-kubernetes-bootcamp/13_redis_statefulset
-#   https://github.com/sobotklp/kubernetes-redis-cluster/blob/master/redis-cluster.yml#L44
-#   https://github.com/sobotklp/kubernetes-redis-cluster/blob/master/redis-cluster.yml
 #   https://github.com/sobotklp/kubernetes-redis-cluster/blob/master/redis-cluster.yml
 
   init.sh: |+
@@ -411,7 +409,6 @@ data:
         ## Controllers
         /usr/local/bin/redis-cli cluster addslots "$(seq 0 16383)"
     else
-        /usr/local/bin/redis-cli cluster addslots "$(seq 0 16383)"
         # Slaves of a random master
         PEER_IP="$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')"
         if [ -n "${PEER_IP}" ]; then
