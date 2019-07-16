@@ -407,7 +407,7 @@ data:
     fi
     if [ "$ORDINAL" -eq "0" ]; then
         ## Controllers
-        /usr/local/bin/redis-cli cluster addslots "$(seq 0 16383)"
+        /usr/local/bin/redis-cli cluster addslots $(seq 0 16383)
     else
         # Slaves of a random master
         PEER_IP="$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')"
