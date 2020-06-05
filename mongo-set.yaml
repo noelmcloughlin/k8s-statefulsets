@@ -1,3 +1,5 @@
+### If you wait to do everything until you're sure it's right,
+### you'll probably never do much of anything” ~ Win Borden
 
 # refs:
 #   https://docs.mongodb.com/manual/replication/#replication-in-mongodb
@@ -25,7 +27,7 @@ provisioner: k8s.io/minikube-hostpath
 parameters:
   pool: default
   description: Kubernetes volume
-  fsType: ext4
+  fsType: xfs
   adminSecretNamespace: default
   adminSecretName: localos-secret
 reclaimPolicy: Delete
@@ -171,16 +173,21 @@ metadata:
     environ: test
 spec:
   ports:
-  - name: mongo
-    port: 27017
-    targetPort: mongo
-  - name: mongo-replica
+  - name: mongo-config
+    port: 27019
+    protocol: TCP
+    targetPort: mongo-config
+  - name: mongo-shard
     port: 27018
-    targetPort: mongo-replica
+    protocol: TCP
+    targetPort: mongo-shard
+  - name: mongo-default
+    port: 27017
+    protocol: TCP
+    targetPort: mongo-default
   selector:
     app: mongo
     tier: backend
-    role: master
     type: mongo
 ---
 # CONFIGMAPS
@@ -198,7 +205,7 @@ kind: ConfigMap
 metadata:
   name: mongo
 data:
-  mongo-keyfile: |-
+  keyfile: |-
     Te/urcU4Pww+duwgVsrntSUkZrIMCmak8LTDtm0L8SzLBQGeHP01RdQ/uhnwAdIb
     8u8bg7k3t3ghZqvoZIfjDLlfFhQUf4QxUz0aJSiEEcAbo9ExArVbQzk8J7+yIRtu
     A6DzBNaj5Bzd69OwcDMXEONc29s+SCsEO2SVuvDtDwF2K3UAqerEv1qlVNzURPbs
@@ -216,52 +223,45 @@ data:
     zHZW/xUXkPL0AVqg9AHNnbMwrGNFsVM5RelC3iqntsO52OEr3jsdBrpHvA98WoRE
     x7KsV/EJMrBHZGMkwc37VBGdgov6r4pfLfOIOOPmaGp8LewK
 
+  mongod.conf: |-
+    security:
+       keyFile: /etc/mongo/keyfile
+    replication:
+       replSetName: rs0
+    net:
+       bindIp: localhost,0.0.0.0,/tmp/mongod.sock
+       port: 27017
+    security:
+       authorization: enabled
+
   init.sh: |+
     set -e
-    ########################################################
-    ## Bootstrap Stateful Set members (uses /etc/podinfo)
-    ## copy keyfile to each host
-    ########################################################
-    if [ -f /etc/podinfo/pod_name ]; then
-        ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
-    else
-        ORDINAL=1 && [ ${HOSTNAME} == 'mongo-0' ] && ORDINAL=0
+    ##############################################################
+    ## init service, discover peers, good luck.
+    ##############################################################
+    cp -p /mnt/config-map/mongod.conf /mnt/conf.d/mongod.conf
+    cp -p /mnt/config-map/run.sh /mnt/conf.d/run.sh || true
+    cp -p /mnt/config-map/keyfile /mnt/conf.d/keyfile
+    # chmod 600 /mnt/conf.d/keyfile
+
+    if [ -x /bin/wget ]; then
+        wget https://storage.googleapis.com/kubernetes-release/pets/peer-finder -O /tmp/peer-finder
+        chmod u+x /tmp/peer-finder
     fi
+    if [ -x /tmp/peer-finder ]; then
+        /tmp/peer-finder -on-start 'tee > /etc/initial_peers' -service mongoset -ns $POD_NAMESPACE
+    fi
+    # do we need to update /etc/hosts?
+    ORDINAL=1 && [ "${HOSTNAME}" == 'mongo-0' ] && ORDINAL=0
+    [ -f /etc/podinfo/pod_name ] && ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
     [ "$ORDINAL" -eq "0" ] && echo "Winner"
     [ "$ORDINAL" -ne "0" ] && echo "Runnerup"
-    cp /mnt/config-map/mongo-keyfile /mnt/conf.d/mongo-keyfile
-    cp /mnt/config-map/run.sh /mnt/conf.d/run.sh || true
-
-    ## peer-finder tool
-    if [ -x /bin/wget ]; then
-        wget https://storage.googleapis.com/kubernetes-release/pets/peer-finder -O /mnt/conf.d/peer-finder
-        chmod u+x /mnt/conf.d/peer-finder
-    fi
-    ### If you wait to do everything until you're sure it's right,
-    ### you'll probably never do much of anything” ~ Win Borden
     wait
 
   run.sh: |+
-    set -e
-    ##############################################################
-    ## Start service, discover peers, good luck.
-    ##############################################################
-    mongod --replSet rs0 --bind_ip=0.0.0.0
+    set -xe
+    mongod --config /etc/mongo/mongod.conf &
     sleep 2
-    if [ -x /etc/mongo/conf.d/peer-finder ]; then
-        /etc/mongo/conf.d/peer-finder -on-start 'tee > /etc/mongo/initial_peers' -service mongoset -ns $POD_NAMESPACE
-    fi
-    if [ -f /etc/podinfo/pod_name ]; then
-        ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
-    else
-        ORDINAL=1 && [ "${HOSTNAME}" == 'mongo-0' ] && ORDINAL=0
-    fi
-    # do we need to update /etc/hosts?
-    [ "$ORDINAL" -eq "0" ] && echo "Winner"
-    [ "$ORDINAL" -ne "0" ] && echo "Runnerup"
-    ### If you wait to do everything until you're sure it's right,
-    ### you'll probably never do much of anything” ~ Win Borden
-    wait
 ---
 #SECRETS
 
@@ -313,12 +313,12 @@ spec:
         - /mnt/config-map/init.sh
         volumeMounts:
         - name: conf
-          mountPath: /mnt/conf.d
+          mountPath: /mnt/conf.d/
           readOnly: false
         - name: config-map
-          mountPath: /mnt/config-map
+          mountPath: /mnt/config-map/
         - name: podinfo
-          mountPath: /etc/podinfo
+          mountPath: /etc/podinfo/
           readOnly: false
 
       containers:
@@ -326,14 +326,13 @@ spec:
         image: mongo
         command:
         - sh
-        - /etc/mongo/conf.d/run.sh       # start service
+        - /etc/mongo/run.sh
         volumeMounts:
         - name: conf
-          mountPath: /etc/mongo/conf.d
+          mountPath: /etc/mongo
           readOnly: false
         - name: data
           mountPath: /var/lib/mongo
-          subPath: mongo
           readOnly: false
         env:
         - name: ALLOW_EMPTY_PASSWORD
@@ -358,10 +357,8 @@ spec:
             fieldRef:
               fieldPath: metadata.namespace
         ports:
-        - name: mongo
+        - name: mongo-default
           containerPort: 27017
-        - name: mongo-replica
-          containerPort: 27018
         resources:
           limits:
             memory: 500Mi
