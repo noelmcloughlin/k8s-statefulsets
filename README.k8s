@@ -2,16 +2,23 @@
    **************
 
 *  MACOS 
+   * INSTALL
    rm -f ~/.minikube
    brew install hyperkit docker-machine-driver-hyperkit
-   brew upgrade hyperkit && brew link --overwrite hyperkit
    sudo chown root:wheel /usr/local/bin/docker-machine-driver-hyperkit
    sudo chmod u+s /usr/local/bin/docker-machine-driver-hyperkit
+   
+   * UPGRADE
+   brew upgrade hyperkit && brew link --overwrite hyperkit
+   curl -Lo minikube https://github.com/kubernetes/minikube/releases/tag/v1.11.0 
+   chown +x minikube
+   sudo mv minikube /usr/local/bin/
 
+   * RUN
    minikube config set vm-driver hyperkit && minikube start --cpus 4 --memory 6144 --feature-gates="AllAlpha=true,BoundServiceAccountTokenVolume=false"
 
 
-*  LINUX
+*  LINUX *
    minikube start --cpus 4 --memory 6144 --feature-gates="AllAlpha=true,BoundServiceAccountTokenVolume=false"
 
 
