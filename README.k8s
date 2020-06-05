@@ -1,8 +1,10 @@
+   
+   **************
    MINIKUBE NOTES
    **************
 
-*  MACOS 
-   On MacOS some steps can be adjusted. For example, Docker Desktop provides a hyperkit binary so the best way to upgrade hyperkit is to upgradee Docker Desktop.
+*  MACOS * 
+   *****
 
    * INSTALL
    rm -f ~/.minikube
@@ -11,16 +13,17 @@
    sudo chmod u+s /usr/local/bin/docker-machine-driver-hyperkit
    
    * UPGRADE
+   ## Note: Docker Desktop includes hyperkit so upgrade Docker Desktop instead. ##
    brew upgrade hyperkit && brew link --overwrite hyperkit
-   curl -Lo minikube https://github.com/kubernetes/minikube/releases/tag/v1.11.0 
-   chown +x minikube
-   sudo mv minikube /usr/local/bin/
+   curl -Lo minikube https://github.com/kubernetes/minikube/releases/download/v1.11.0/minikube-darwin-amd64
+   chown +x minikube && sudo mv minikube /usr/local/bin/
 
    * RUN
    minikube config set vm-driver hyperkit && minikube start --cpus 4 --memory 6144 --feature-gates="AllAlpha=true,BoundServiceAccountTokenVolume=false"
 
 
 *  LINUX *
+   *******
    minikube start --cpus 4 --memory 6144 --feature-gates="AllAlpha=true,BoundServiceAccountTokenVolume=false"
 
 
@@ -29,26 +32,28 @@
   KUBERNETES STATEFULSETS
   ************************
 
-* WP/MYSQL
+* WP/MYSQL *
 
   kubectl apply -f mysql-wordpress-set.yaml
   kubectl get pods
   kubectl logs -l app=mysql,wordpress    # todo: check syntax for multiples?
   kubectl delete -f mysql-wordpress-set.yaml 
 
-* REDIS
+* REDIS *
 
   kubectl apply -f redis-set.yaml
   kubectl logs -l app=redis
   kubectl delete -f redis-set.yaml
 
-* MONGODB
+* MONGODB *
 
   kubectl apply -f mongo-set.yaml
   kubectl logs -l app=mongo
   kubectl delete -f mongo-set.yaml
 
 
+  TROUBLESHOOTING
+  ***************
 
-* CLEANUP PV/PVC's stuck terminating..
+* Cleanup PV/PVC's stuck terminating *
   kubectl delete pvc --all --force --grace-period=0; kubectl delete pv --all --force --grace-period=0; kubectl get all
