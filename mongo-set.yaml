@@ -8,6 +8,7 @@
 #   https://docs.bmc.com/docs/digitalworkplaceadvanced/1802/configuring-mongodb-for-replica-set-788652018.html
 #   http://kubernetes.kansea.com/docs/user-guide/petset/bootstrapping
 #   https://stackoverflow.com/questions/57492145/error-when-creating-a-mongodb-replicaset-shows-unrecognized-option-smallfil
+#   https://kubernetes.io/docs/concepts/cluster-administration/logging
 
 # STORAGE CLASS
 # ... delay volume binding until pods are scheduled
@@ -224,14 +225,15 @@ data:
     x7KsV/EJMrBHZGMkwc37VBGdgov6r4pfLfOIOOPmaGp8LewK
 
   mongod.conf: |-
-    security:
-       keyFile: /etc/mongo/keyfile
     replication:
        replSetName: rs0
     net:
-       bindIp: localhost,0.0.0.0,/tmp/mongod.sock
+       bindIp: 0.0.0.0
        port: 27017
+       unixDomainSocket:
+           enabled: false   # https://jira.mongodb.org/browse/SERVER-32218
     security:
+       keyFile: /etc/mongo/keyfile
        authorization: enabled
 
   init.sh: |+
@@ -242,7 +244,7 @@ data:
     cp -p /mnt/config-map/mongod.conf /mnt/conf.d/mongod.conf
     cp -p /mnt/config-map/run.sh /mnt/conf.d/run.sh || true
     cp -p /mnt/config-map/keyfile /mnt/conf.d/keyfile
-    # chmod 600 /mnt/conf.d/keyfile
+    chmod 400 /mnt/conf.d/keyfile
 
     if [ -x /bin/wget ]; then
         wget https://storage.googleapis.com/kubernetes-release/pets/peer-finder -O /tmp/peer-finder
@@ -254,14 +256,30 @@ data:
     # do we need to update /etc/hosts?
     ORDINAL=1 && [ "${HOSTNAME}" == 'mongo-0' ] && ORDINAL=0
     [ -f /etc/podinfo/pod_name ] && ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
-    [ "$ORDINAL" -eq "0" ] && echo "Winner"
+    if [ "$ORDINAL" -eq "0" ]; then
+        mkdir /docker-entrypoint-initdb.d || echo "docker-entrypoint-initdb.d already exists"
+        cp -p /mnt/config-map/init-mongo.js /docker-entrypoint-initdb.d/
+    fi
     [ "$ORDINAL" -ne "0" ] && echo "Runnerup"
     wait
 
   run.sh: |+
     set -xe
-    mongod --config /etc/mongo/mongod.conf &
-    sleep 2
+    mongod --config /etc/mongo/mongod.conf
+
+  init-mongo.js: |-
+    db.createUser(
+      {
+        user: "hello",
+        pwd: "fresh",
+        roles: [
+          {
+            role: "readWrite",
+            db: "hello-mongo"
+          }
+        ]
+      }
+    )
 ---
 #SECRETS
 
@@ -376,7 +394,7 @@ spec:
             command:
             - /bin/sh
             - -c
-            - mongo --eval db.adminCommand('ping')
+            - echo "Hello mongo --eval db.adminCommand('ping')"
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
@@ -386,13 +404,13 @@ spec:
             command:
             - /bin/sh
             - -c
-            - mongo --eval db.adminCommand('ping')
+            - echo "Hello mongo --eval db.adminCommand('ping')"
           initialDelaySeconds: 30
           periodSeconds: 2
           timeoutSeconds: 1
           failureThreshold: 3
         terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
+        terminationMessagePolicy: FallbackToLogsOnError # File
 
       volumes:
       - name: conf
