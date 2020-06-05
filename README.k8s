@@ -3,7 +3,8 @@
 
 *  MACOS 
    rm -f ~/.minikube
-   brew install hyperkit docker-machine-driver-hyperkit && brew upgrade hyperkit
+   brew install hyperkit docker-machine-driver-hyperkit
+   brew upgrade hyperkit && brew link --overwrite hyperkit
    sudo chown root:wheel /usr/local/bin/docker-machine-driver-hyperkit
    sudo chmod u+s /usr/local/bin/docker-machine-driver-hyperkit
 
