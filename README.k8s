@@ -36,20 +36,19 @@
 * WP/MYSQL *
 
   kubectl apply -f mysql-wordpress-set.yaml
-  kubectl get pods
-  kubectl logs -l app=mysql,wordpress    # todo: check syntax for multiples?
+  kubectl get pods; kubectl logs -l app=mysql,wordpress    # todo: check syntax for multiples?
   kubectl delete -f mysql-wordpress-set.yaml 
 
 * REDIS *
 
   kubectl apply -f redis-set.yaml
-  kubectl logs -l app=redis
+  kubectl get pods; kubectl logs -l app=redis
   kubectl delete -f redis-set.yaml
 
 * MONGODB *
 
   kubectl apply -f mongo-set.yaml
-  kubectl logs -l app=mongo
+  kubectl get pods; kubectl logs -l app=mongo
   kubectl delete -f mongo-set.yaml
 
 
