@@ -1,3 +1,16 @@
+#	Copyright 2020, noelmcloughlin
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http:#www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 ### If you wait to do everything until you're sure it's right,
 ### you'll probably never do much of anything” ~ Win Borden
 
@@ -162,6 +175,7 @@ spec:
 ---
 #SERVICE
 ## Headless service for stable dns names
+##   mongo-0.mongo, mongo-1.mongo, mongo-2.mongo
 
 apiVersion: v1
 kind: Service
@@ -188,8 +202,11 @@ spec:
     targetPort: mongo-default
   selector:
     app: mongo
-    tier: backend
     type: mongo
+    tier: backend
+  externalIPs:
+    - 192.168.1.2
+  # type: LoadBalancer
 ---
 # CONFIGMAPS
 
@@ -200,10 +217,6 @@ metadata:
   namespace: default
 data:
   MONGO_INITDB_DATABASE: 'hello-mongo'
-  MONGO_BIND_IP: '0.0.0.0'
-  MONGO_PORT_DEFAULT: 27017
-  MONGO_PORT_CONFIG: 27018
-  MONGO_PORT_SHARD: 27019
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -232,10 +245,12 @@ data:
     replication:
        replSetName: rs0
     net:
-       bindIp: ${MONGO_BIND_IP}
-       port: ${MONGO_PORT_DEFAULT}
+       # bindIp: '0.0.0.0,::'
+       bindIpAll: true
+       ipv6: true
+       port: 27017
        unixDomainSocket:
-           enabled: false   # https://jira.mongodb.org/browse/SERVER-32218 ?
+           enabled: true
     security:
        keyFile: /etc/mongo/keyfile
        authorization: enabled
