@@ -5,6 +5,7 @@
 
 *  MACOS * 
    *****
+   Change versions to your preference.
 
    * INSTALL
    rm -f ~/.minikube
@@ -19,7 +20,7 @@
    chown +x minikube && sudo mv minikube /usr/local/bin/
 
    * RUN
-   minikube config set vm-driver hyperkit && minikube start --cpus 4 --memory 6144 --feature-gates="AllAlpha=true,BoundServiceAccountTokenVolume=false"
+   minikube config set vm-driver hyperkit && minikube start --cpus 4 --memory 6144 --feature-gates="AllAlpha=true,BoundServiceAccountTokenVolume=false" --kubernetes-version=v1.18.3
 
 
 *  LINUX *
