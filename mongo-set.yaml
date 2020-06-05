@@ -243,7 +243,7 @@ data:
     ##############################################################
     ## Start service, discover peers, good luck.
     ##############################################################
-    mongod --replSet rs0 --smallfiles --noprealloc
+    mongod --replSet rs0 --noprealloc
     sleep 2
     if [ -x /etc/mongo/conf.d/peer-finder ]; then
         /etc/mongo/conf.d/peer-finder -on-start 'tee > /etc/mongo/initial_peers' -service mongoset -ns $POD_NAMESPACE
