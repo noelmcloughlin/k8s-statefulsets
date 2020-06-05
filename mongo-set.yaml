@@ -231,7 +231,7 @@ data:
        bindIp: 0.0.0.0
        port: 27017
        unixDomainSocket:
-           enabled: false   # https://jira.mongodb.org/browse/SERVER-32218
+           enabled: false   # https://jira.mongodb.org/browse/SERVER-32218 ?
     security:
        keyFile: /etc/mongo/keyfile
        authorization: enabled
@@ -245,6 +245,7 @@ data:
     cp -p /mnt/config-map/run.sh /mnt/conf.d/run.sh || true
     cp -p /mnt/config-map/keyfile /mnt/conf.d/keyfile
     chmod 400 /mnt/conf.d/keyfile
+    cp -p /mnt/config-map/init-mongo.js /docker-entrypoint-initdb.d/ || true  # works in docker
 
     if [ -x /bin/wget ]; then
         wget https://storage.googleapis.com/kubernetes-release/pets/peer-finder -O /tmp/peer-finder
@@ -256,10 +257,7 @@ data:
     # do we need to update /etc/hosts?
     ORDINAL=1 && [ "${HOSTNAME}" == 'mongo-0' ] && ORDINAL=0
     [ -f /etc/podinfo/pod_name ] && ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
-    if [ "$ORDINAL" -eq "0" ]; then
-        mkdir /docker-entrypoint-initdb.d || echo "docker-entrypoint-initdb.d already exists"
-        cp -p /mnt/config-map/init-mongo.js /docker-entrypoint-initdb.d/
-    fi
+    [ "$ORDINAL" -eq "0" ] && echo "Winner"
     [ "$ORDINAL" -ne "0" ] && echo "Runnerup"
     wait
 
