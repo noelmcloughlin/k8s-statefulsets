@@ -32,11 +32,16 @@
   kubectl apply -f mysql-wordpress-set.yaml
   kubectl delete -f mysql-wordpress-set.yaml 
 
-
 * REDIS
 
   kubectl apply -f redis-set.yaml
   kubectl delete -f redis-set.yaml
+
+* MONGODB
+
+  kubectl apply -f mongo-set.yaml
+  kubectl delete -f mongo-set.yaml
+
 
 
 * CLEANUP PV/PVC's stuck terminating..

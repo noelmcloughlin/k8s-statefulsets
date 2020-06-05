@@ -1,0 +1,426 @@
+
+# refs:
+#   https://docs.mongodb.com/manual/replication/#replication-in-mongodb
+#   https://medium.com/codeops/how-to-setup-a-mongodb-replica-set-918f21da50ed
+#   https://www.chankok.com/start-mongodb-with-configuration-file
+#   https://docs.bmc.com/docs/digitalworkplaceadvanced/1802/configuring-mongodb-for-replica-set-788652018.html
+#   http://kubernetes.kansea.com/docs/user-guide/petset/bootstrapping
+
+
+# STORAGE CLASS
+# ... delay volume binding until pods are scheduled
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local
+  labels:
+    type: local
+    tier: infra
+    environ: test
+  annotations:
+    storageclass.beta.kubernetes.io/is-default-class: "true"
+# provisioner: kubernetes.io/no-provisioner
+provisioner: k8s.io/minikube-hostpath
+parameters:
+  pool: default
+  description: Kubernetes volume
+  fsType: ext4
+  adminSecretNamespace: default
+  adminSecretName: localos-secret
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+---
+# PERSISTENT VOLUMES
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-pv1
+  labels:
+    app: mongo
+    bind: mongo
+    tier: infra
+    environ: test
+  annotations:
+    #pv.beta.kubernetes.io/gid: "1234"
+    "volume.alpha.kubernetes.io/node-affinity": '{
+      "requiredDuringSchedulingIgnoredDuringExecution": {
+        "nodeSelectorTerms": [
+          { "matchExpressions": [
+              { "key": "kubernetes.io/hostname",
+                "operator": "In",
+                "values": ["minikube"]
+              }
+          ]}
+        ]}}'
+spec:
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete #Retain
+  storageClassName: local
+  hostPath:
+    type: DirectoryOrCreate
+    path: /tmp/mongo-pv1
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-pv2
+  labels:
+    app: mongo
+    bind: mongo
+    tier: infra
+    environ: test
+  annotations:
+    #pv.beta.kubernetes.io/gid: "1234"
+    "volume.alpha.kubernetes.io/node-affinity": '{
+      "requiredDuringSchedulingIgnoredDuringExecution": {
+        "nodeSelectorTerms": [
+          { "matchExpressions": [
+              { "key": "kubernetes.io/hostname",
+                "operator": "In",
+                "values": ["minikube"]
+              }
+          ]}
+        ]}}'
+spec:
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete #Retain
+  storageClassName: local
+  hostPath:
+    type: DirectoryOrCreate
+    path: /tmp/mongo-pv2
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-pv3
+  labels:
+    app: mongo
+    bind: mongo
+    tier: infra
+    environ: test
+  annotations:
+    #pv.beta.kubernetes.io/gid: "1234"
+    "volume.alpha.kubernetes.io/node-affinity": '{
+      "requiredDuringSchedulingIgnoredDuringExecution": {
+        "nodeSelectorTerms": [
+          { "matchExpressions": [
+              { "key": "kubernetes.io/hostname",
+                "operator": "In",
+                "values": ["minikube"]
+              }
+          ]}
+        ]}}'
+spec:
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete #Retain
+  storageClassName: local
+  hostPath:
+    type: DirectoryOrCreate
+    path: /tmp/mongo-pv3
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+---
+#SERVICE
+## Headless service for stable dns names
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  annotations:
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: "false"
+  labels:
+    app: mongo
+    environ: test
+spec:
+  ports:
+  - name: mongo
+    port: 27017
+    targetPort: mongo
+  selector:
+    app: mongo
+    tier: backend
+    role: master
+    type: mongo
+---
+# CONFIGMAPS
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: env-config
+  namespace: default
+data:
+  MONGO_INITDB_DATABASE: 'hello-mongo'
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo
+data:
+  mongo-keyfile: |-
+    Te/urcU4Pww+duwgVsrntSUkZrIMCmak8LTDtm0L8SzLBQGeHP01RdQ/uhnwAdIb
+    8u8bg7k3t3ghZqvoZIfjDLlfFhQUf4QxUz0aJSiEEcAbo9ExArVbQzk8J7+yIRtu
+    A6DzBNaj5Bzd69OwcDMXEONc29s+SCsEO2SVuvDtDwF2K3UAqerEv1qlVNzURPbs
+    e60WU1/qpmX9urSRNNmdYA6neUQceSR0lJclDUzwzURRIMR5Xk534JpAbRcQ3DkJ
+    KraQKusoLNmej6WIM8y2qcviwsEdpvBDJN0c4eZdyatlHkAwYrGTwBnKTeD7J+ik
+    ZTehYF7+okMeX4xfVsSV2rYJzSU4XLugEDkKQzxUdHn1eMGQguNzeAHwyeloUoJc
+    4GbwWFzTkBJZ4obhtIzcbHezDS1Aq32SbSuqvSPTSq5gGtwVeOtDW8N7YFy5UVdB
+    YiLcZm/W4kxOu0i+sOwn/xt5jlVslzuQ65bc9oFTHw4K85nHupBUbxWvhWB8HDok
+    hxawwHuD3a2ckXZ9nNcjOKM13LTnuZMmzz/Iuxz4/HxF5wajSnRo5yW+fzYO3Una
+    /9gqhfxnp220Cxi+u3ArHgJQQfIUvRLwaDV100KfmjYS43HnkfYzqKyRXoLCeQ3O
+    Ex/lFUKaVfVOBYDtHxnnOmA/8c/Nd2rO5axY/7CXgMIAEkyLYPaeVSJU2rGCKWwM
+    jTujI2rV2dfIUevwzpQoo6+ik8B64bIA2sqfAa8qCnsmezcwKj6l4Vjjb92wkFoF
+    iq4u0AMzZCO0vzu/x2Lq4nlu3CgAbLud5Yx3eGl7R1SQQ4oLCVdBvs/hiQKfjc7y
+    XqoAFVsTfcoKU3ayTNeF8OpiT97w4uNTbk06B9qn+5E1T9xVq+d1TU7eGjVGszQK
+    zHZW/xUXkPL0AVqg9AHNnbMwrGNFsVM5RelC3iqntsO52OEr3jsdBrpHvA98WoRE
+    x7KsV/EJMrBHZGMkwc37VBGdgov6r4pfLfOIOOPmaGp8LewK
+
+  init.sh: |+
+    set -e
+    ########################################################
+    ## Bootstrap Stateful Set members (uses /etc/podinfo)
+    ## copy keyfile to each host
+    ########################################################
+    if [ -f /etc/podinfo/pod_name ]; then
+        ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
+    else
+        ORDINAL=1 && [ ${HOSTNAME} == 'mongo-0' ] && ORDINAL=0
+    fi
+    [ "$ORDINAL" -eq "0" ] && echo "Winner"
+    [ "$ORDINAL" -ne "0" ] && echo "Runnerup"
+    cp /mnt/config-map/mongo-keyfile /mnt/conf.d/mongo-keyfile
+    cp /mnt/config-map/run.sh /mnt/conf.d/run.sh || true
+
+    ## peer-finder tool
+    if [ -x /bin/wget ]; then
+        wget https://storage.googleapis.com/kubernetes-release/pets/peer-finder -O /mnt/conf.d/peer-finder
+        chmod u+x /mnt/conf.d/peer-finder
+    fi
+    ### If you wait to do everything until you're sure it's right,
+    ### you'll probably never do much of anything” ~ Win Borden
+    wait
+
+  run.sh: |+
+    set -e
+    ##############################################################
+    ## Start service, discover peers, good luck.
+    ##############################################################
+    mongod --replSet rs0 --smallfiles --noprealloc
+    sleep 2
+    if [ -x /etc/mongo/conf.d/peer-finder ]; then
+        /etc/mongo/conf.d/peer-finder -on-start 'tee > /etc/mongo/initial_peers' -service mongoset -ns $POD_NAMESPACE
+    fi
+    if [ -f /etc/podinfo/pod_name ]; then
+        ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
+    else
+        ORDINAL=1 && [ "${HOSTNAME}" == 'mongo-0' ] && ORDINAL=0
+    fi
+    # do we need to update /etc/hosts?
+    [ "$ORDINAL" -eq "0" ] && echo "Winner"
+    [ "$ORDINAL" -ne "0" ] && echo "Runnerup"
+    ### If you wait to do everything until you're sure it's right,
+    ### you'll probably never do much of anything” ~ Win Borden
+    wait
+---
+#SECRETS
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mongo
+type: Opaque
+data:
+  MONGO_INITDB_ROOT_USERNAME: YWRtaW4=
+  MONGO_INITDB_ROOT_PASSWORD: YWRtaW4=
+stringData:
+  MONGO_INITDB_ROOT_USERNAME: admin
+  MONGO_INITDB_ROOT_PASSWORD: admin
+---
+# STATEFULSET
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo
+  labels:
+    app: mongo
+    tier: backend
+    environ: test
+spec:
+  serviceName: mongo
+  replicas: 3
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: mongo
+      tier: backend
+      environ: test
+  template:
+    metadata:
+      labels:
+        app: mongo
+        tier: backend
+        environ: test
+    spec:
+      terminationGracePeriodSeconds: 10
+      initContainers:
+      - name: init
+        image: mongo
+        command:
+        - sh
+        - /mnt/config-map/init.sh
+        volumeMounts:
+        - name: conf
+          mountPath: /mnt/conf.d
+          readOnly: false
+        - name: config-map
+          mountPath: /mnt/config-map
+        - name: podinfo
+          mountPath: /etc/podinfo
+          readOnly: false
+
+      containers:
+      - name: mongo
+        image: mongo
+        command:
+        - sh
+        - /etc/mongo/conf.d/run.sh       # start service
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/mongo/conf.d
+          readOnly: false
+        - name: data
+          mountPath: /var/lib/mongo
+          subPath: mongo
+          readOnly: false
+        env:
+        - name: ALLOW_EMPTY_PASSWORD
+          value: "no"
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: mongo
+              key: MONGO_INITDB_ROOT_USERNAME
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mongo
+              key: MONGO_INITDB_ROOT_PASSWORD
+        - name: MONGO_INITDB_DATABASE
+          valueFrom:
+            configMapKeyRef:
+              name: env-config
+              key: MONGO_INITDB_DATABASE
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        ports:
+        - name: mongo
+          containerPort: 27017
+        resources:
+          limits:
+            memory: 500Mi
+          requests:
+            memory: 500Mi
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - '-c'
+              - echo 'goodbye world'
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - ping -c1 $(hostname)
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            # Check we can execute queries over TCP (skip-networking is off).
+            command: ["ping", "-c", "1", "$(hostname)"]
+          initialDelaySeconds: 30
+          periodSeconds: 2
+          timeoutSeconds: 1
+          failureThreshold: 3
+
+      volumes:
+      - name: conf
+        emptyDir: {}
+      - name: config-map
+        configMap:
+          name: mongo
+      - name: podinfo
+        ## init containers may use this to find cluster peers
+        downwardAPI:
+          items:
+            - path: "labels"
+              fieldRef:
+                fieldPath: metadata.labels
+            - path: "annotations"
+              fieldRef:
+                fieldPath: metadata.annotations
+            - path: "pod_name"
+              fieldRef:
+                fieldPath: metadata.name
+            - path: "pod_namespace"
+              fieldRef:
+                fieldPath: metadata.namespace
+
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        annotations:
+          volume.beta.kubernetes.io/storage-class: local
+      spec:
+        storageClassName: local
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 500m
+        selector:
+          matchLabels:
+            bind: mongo
