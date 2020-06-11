@@ -1,4 +1,4 @@
-#	Copyright 2020, noelmcloughlin
+#       Copyright 2020, noelmcloughlin
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -17,11 +17,11 @@
 # refs:
 #   https://docs.mongodb.com/manual/replication/#replication-in-mongodb
 #   https://medium.com/codeops/how-to-setup-a-mongodb-replica-set-918f21da50ed
-#   https://www.chankok.com/start-mongodb-with-configuration-file
 #   https://docs.bmc.com/docs/digitalworkplaceadvanced/1802/configuring-mongodb-for-replica-set-788652018.html
 #   http://kubernetes.kansea.com/docs/user-guide/petset/bootstrapping
-#   https://stackoverflow.com/questions/57492145/error-when-creating-a-mongodb-replicaset-shows-unrecognized-option-smallfil
 #   https://kubernetes.io/docs/concepts/cluster-administration/logging
+#   https://doc.akka.io/docs/akka-management/current/bootstrap/kubernetes.html
+#   https://www.bogotobogo.com/DevOps/Docker/Docker_MongoDB_with_StatefulSets_on_GCP_Kubernetes.php
 
 # STORAGE CLASS
 # ... delay volume binding until pods are scheduled
@@ -173,7 +173,48 @@ spec:
               values:
                 - minikube
 ---
-#SERVICE
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongo-pv4
+  labels:
+    app: mongo
+    bind: mongo
+    tier: infra
+    environ: test
+  annotations:
+    #pv.beta.kubernetes.io/gid: "1234"
+    "volume.alpha.kubernetes.io/node-affinity": '{
+      "requiredDuringSchedulingIgnoredDuringExecution": {
+        "nodeSelectorTerms": [
+          { "matchExpressions": [
+              { "key": "kubernetes.io/hostname",
+                "operator": "In",
+                "values": ["minikube"]
+              }
+          ]}
+        ]}}'
+spec:
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Delete #Retain
+  storageClassName: local
+  hostPath:
+    type: DirectoryOrCreate
+    path: /tmp/mongo-pv4
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+---
+# SERVICE
 ## Headless service for stable dns names
 ##   mongo-0.mongo, mongo-1.mongo, mongo-2.mongo
 
@@ -188,35 +229,53 @@ metadata:
     environ: test
 spec:
   ports:
-  - name: mongo-config
-    port: 27019
-    protocol: TCP
-    targetPort: mongo-config
-  - name: mongo-shard
-    port: 27018
-    protocol: TCP
-    targetPort: mongo-shard
   - name: mongo-default
     port: 27017
     protocol: TCP
-    targetPort: mongo-default
+    targetPort: 27017
   selector:
     app: mongo
     type: mongo
-    tier: backend
-  externalIPs:
-    - 192.168.1.2
-  # type: LoadBalancer
+  type: LoadBalancer
+
 ---
 # CONFIGMAPS
 
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: env-config
+  name: config-master
   namespace: default
 data:
-  MONGO_INITDB_DATABASE: 'hello-mongo'
+  init-master.js: |-
+    rs.initiate()
+    db.createUser(
+      {
+        user: "myadmin",
+        pwd: "myadmin",
+        roles: [
+          {
+            role: "userAdminAnyDatabase",
+            db: "admin"
+          }
+        ]
+      }
+    )
+
+  init-hello.js: |-
+    db.createUser(
+      {
+        user: "hello",
+        pwd: "fresh",
+        roles: [
+          {
+            role: "readWrite",
+            db: "hello-world"
+          }
+        ]
+      }
+    )
+
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -241,62 +300,89 @@ data:
     zHZW/xUXkPL0AVqg9AHNnbMwrGNFsVM5RelC3iqntsO52OEr3jsdBrpHvA98WoRE
     x7KsV/EJMrBHZGMkwc37VBGdgov6r4pfLfOIOOPmaGp8LewK
 
+  mongod.conf.noauth: |-
+    security:
+       authorization: disabled
+
   mongod.conf: |-
-    replication:
-       replSetName: rs0
+    # mongod.conf
+
+    # for documentation of all options, see:
+    #   http://docs.mongodb.org/manual/reference/configuration-options/
+
+    # Where and how to store data.
+    # storage:
+    #    dbPath: /var/lib/mongodb
+    #    journal:
+    #     enabled: true
+    #  engine:
+    #  mmapv1:
+    #  wiredTiger:
+
+    # network interfaces
     net:
        # bindIp: '0.0.0.0,::'
        bindIpAll: true
        ipv6: true
        port: 27017
        unixDomainSocket:
-           enabled: true
-    security:
-       keyFile: /etc/mongo/keyfile
-       authorization: enabled
+         enabled: true
+
+    # https://docs.mongodb.com/manual/core/authentication
+    # security:
+    #    keyFile: /etc/mongo/keyfile
+    #    authorization: enabled
+
+    replication:
+       replSetName: rs0
+
+    setParameter:
+       diagnosticDataCollectionEnabled: false
+
 
   init.sh: |+
-    set -e
-    ##############################################################
-    ## init service, discover peers, good luck.
-    ##############################################################
-    cp -p /mnt/config-map/mongod.conf /mnt/conf.d/mongod.conf
-    cp -p /mnt/config-map/run.sh /mnt/conf.d/run.sh || true
-    cp -p /mnt/config-map/keyfile /mnt/conf.d/keyfile
-    chmod 400 /mnt/conf.d/keyfile
-    cp -p /mnt/config-map/init-mongo.js /docker-entrypoint-initdb.d/ || true  # works in docker
+    set -xe
+    ###################################################
+    ## init service - copy each configmap individually
+    ###################################################
 
-    if [ -x /bin/wget ]; then
-        wget https://storage.googleapis.com/kubernetes-release/pets/peer-finder -O /tmp/peer-finder
-        chmod u+x /tmp/peer-finder
+    ## configuration
+    cp -p /mnt/config-init/mongod.conf /mnt/conf.d/mongod.conf
+    cp -p /mnt/config-init/mongod.conf.noauth /mnt/conf.d/mongod.conf.noauth
+    cp -p /mnt/config-init/run.sh /mnt/conf.d/run.sh
+    cp -p /mnt/config-init/livenessProbe.sh /mnt/conf.d/livenessProbe.sh
+    cp -p /mnt/config-init/readinessProbe.sh /mnt/conf.d/readinessProbe.sh
+    cp -p /mnt/config-init/keyfile /mnt/conf.d/keyfile
+    chmod 400 /mnt/conf.d/keyfile
+    chmod +x /mnt/conf.d/*.sh
+    chown mongodb /mnt/conf.d/run.sh /mnt/conf.d/mongod.conf
+
+    ## initialization
+    cp -p /mnt/config-dbs/init-master.js /mnt/conf.d/init-master.js || true
+    cp -p /mnt/config-dbs/init-hello.js /mnt/conf.d/init-hello.js || true
+
+    # initialize db
+    ORDINAL=1 && [ "${HOSTNAME}" = "mongo-0" ] && ORDINAL=0
+    if [ -f /etc/podinfo/pod_name ]; then
+        ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
     fi
-    if [ -x /tmp/peer-finder ]; then
-        /tmp/peer-finder -on-start 'tee > /etc/initial_peers' -service mongoset -ns $POD_NAMESPACE
+    if [ "$ORDINAL" -eq "0" ]; then
+        mongod --config /mnt/conf.d/mongod.conf.noauth &
+        sleep 30
+        mongo localhost:27017/admin /mnt/conf.d/init-master.js
+        # mongo localhost:27017/admin /mnt/conf.d/init-hello.js  # this fails. why?
     fi
-    # do we need to update /etc/hosts?
-    ORDINAL=1 && [ "${HOSTNAME}" == 'mongo-0' ] && ORDINAL=0
-    [ -f /etc/podinfo/pod_name ] && ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
-    [ "$ORDINAL" -eq "0" ] && echo "Winner"
-    [ "$ORDINAL" -ne "0" ] && echo "Runnerup"
-    wait
 
   run.sh: |+
     set -xe
     mongod --config /etc/mongo/mongod.conf
 
-  init-mongo.js: |-
-    db.createUser(
-      {
-        user: "hello",
-        pwd: "fresh",
-        roles: [
-          {
-            role: "readWrite",
-            db: "hello-mongo"
-          }
-        ]
-      }
-    )
+  livenessProbe.sh: |+
+    echo "mongo --eval db.adminCommand('ping')"    # todo: determine best check
+
+  readinessProbe.sh: |+
+    echo "mongo --eval db.adminCommand('ping')"    # todo: determine best check
+
 ---
 #SECRETS
 
@@ -311,6 +397,7 @@ data:
 stringData:
   MONGO_INITDB_ROOT_USERNAME: admin
   MONGO_INITDB_ROOT_PASSWORD: admin
+  MONGO_INITDB_DATABASE: admin
 ---
 # STATEFULSET
 
@@ -320,22 +407,19 @@ metadata:
   name: mongo
   labels:
     app: mongo
-    tier: backend
     environ: test
 spec:
   serviceName: mongo
   replicas: 3
-  podManagementPolicy: Parallel # OrderedReady
+  podManagementPolicy: OrderedReady
   selector:
     matchLabels:
       app: mongo
-      tier: backend
       environ: test
   template:
     metadata:
       labels:
         app: mongo
-        tier: backend
         environ: test
     spec:
       terminationGracePeriodSeconds: 10
@@ -345,30 +429,27 @@ spec:
         imagePullPolicy: IfNotPresent
         command:
         - sh
-        - /mnt/config-map/init.sh
+        - /mnt/config-init/init.sh
         volumeMounts:
         - name: conf
           mountPath: /mnt/conf.d/
           readOnly: false
-        - name: config-map
-          mountPath: /mnt/config-map/
+        - name: config-init
+          mountPath: /mnt/config-init/
         - name: podinfo
           mountPath: /etc/podinfo/
+          readOnly: false
+        - name: config-master
+          mountPath: /mnt/config-dbs/
           readOnly: false
 
       containers:
       - name: mongo
-        image: mongo
+        image: noelmcloughlin/mongo
+        imagePullPolicy: IfNotPresent
         command:
-        - sh
+        - bash
         - /etc/mongo/run.sh
-        volumeMounts:
-        - name: conf
-          mountPath: /etc/mongo
-          readOnly: false
-        - name: data
-          mountPath: /var/lib/mongo
-          readOnly: false
         env:
         - name: ALLOW_EMPTY_PASSWORD
           value: "no"
@@ -384,13 +465,21 @@ spec:
               key: MONGO_INITDB_ROOT_PASSWORD
         - name: MONGO_INITDB_DATABASE
           valueFrom:
-            configMapKeyRef:
-              name: env-config
+            secretKeyRef:
+              name: mongo
               key: MONGO_INITDB_DATABASE
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: MY_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: MY_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         ports:
         - name: mongo-default
           containerPort: 27017
@@ -409,9 +498,8 @@ spec:
         livenessProbe:
           exec:
             command:
-            - /bin/sh
-            - -c
-            - echo "Hello mongo --eval db.adminCommand('ping')"
+            - bash
+            - /etc/mongo/livenessProbe.sh
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
@@ -419,20 +507,29 @@ spec:
         readinessProbe:
           exec:
             command:
-            - /bin/sh
-            - -c
-            - echo "Hello mongo --eval db.adminCommand('ping')"
+            - bash
+            - /etc/mongo/readinessProbe.sh
           initialDelaySeconds: 30
           periodSeconds: 2
           timeoutSeconds: 1
           failureThreshold: 3
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError # File
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/mongo
+          readOnly: false
+        - name: data
+          mountPath: /var/lib/mongodb
+          readOnly: false
 
       volumes:
       - name: conf
         emptyDir: {}
-      - name: config-map
+      - name: config-master
+        configMap:
+          name: config-master
+      - name: config-init
         configMap:
           name: mongo
       - name: podinfo
