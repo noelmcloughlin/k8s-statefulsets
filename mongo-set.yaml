@@ -77,7 +77,7 @@ spec:
   accessModes:
     - ReadWriteOnce
     - ReadWriteMany
-  persistentVolumeReclaimPolicy: Delete #Retain
+  persistentVolumeReclaimPolicy: Retain
   storageClassName: local
   hostPath:
     type: DirectoryOrCreate
@@ -118,7 +118,7 @@ spec:
   accessModes:
     - ReadWriteOnce
     - ReadWriteMany
-  persistentVolumeReclaimPolicy: Delete #Retain
+  persistentVolumeReclaimPolicy: Retain
   storageClassName: local
   hostPath:
     type: DirectoryOrCreate
@@ -159,7 +159,7 @@ spec:
   accessModes:
     - ReadWriteOnce
     - ReadWriteMany
-  persistentVolumeReclaimPolicy: Delete #Retain
+  persistentVolumeReclaimPolicy: Retain
   storageClassName: local
   hostPath:
     type: DirectoryOrCreate
@@ -200,7 +200,7 @@ spec:
   accessModes:
     - ReadWriteOnce
     - ReadWriteMany
-  persistentVolumeReclaimPolicy: Delete #Retain
+  persistentVolumeReclaimPolicy: Retain
   storageClassName: local
   hostPath:
     type: DirectoryOrCreate
@@ -303,6 +303,8 @@ data:
   mongod.conf.noauth: |-
     security:
        authorization: disabled
+  #  storage:
+  #     dbPath: /var/lib/mongodb
 
   mongod.conf: |-
     # mongod.conf
@@ -311,10 +313,10 @@ data:
     #   http://docs.mongodb.org/manual/reference/configuration-options/
 
     # Where and how to store data.
-    # storage:
-    #    dbPath: /var/lib/mongodb
-    #    journal:
-    #     enabled: true
+    storage:
+       dbPath: /var/lib/mongodb
+       journal:
+        enabled: true
     #  engine:
     #  mmapv1:
     #  wiredTiger:
@@ -329,16 +331,15 @@ data:
          enabled: true
 
     # https://docs.mongodb.com/manual/core/authentication
-    # security:
-    #    keyFile: /etc/mongo/keyfile
-    #    authorization: enabled
+    security:
+       keyFile: /etc/mongo/keyfile
+       authorization: enabled
 
     replication:
        replSetName: rs0
 
     setParameter:
        diagnosticDataCollectionEnabled: false
-
 
   init.sh: |+
     set -xe
@@ -361,20 +362,18 @@ data:
     cp -p /mnt/config-dbs/init-master.js /mnt/conf.d/init-master.js || true
     cp -p /mnt/config-dbs/init-hello.js /mnt/conf.d/init-hello.js || true
 
+  run.sh: |+
+    set -xe
     # initialize db
     ORDINAL=1 && [ "${HOSTNAME}" = "mongo-0" ] && ORDINAL=0
     if [ -f /etc/podinfo/pod_name ]; then
         ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
     fi
-    if [ "$ORDINAL" -eq "0" ]; then
-        mongod --config /mnt/conf.d/mongod.conf.noauth &
-        sleep 30
-        mongo localhost:27017/admin /mnt/conf.d/init-master.js
-        # mongo localhost:27017/admin /mnt/conf.d/init-hello.js  # this fails. why?
+    if [ "${HOSTNAME}" -eq "mongo-0" ]; then
+        mongod --config /etc/mongo/mongod.conf.noauth &
+        sleep 1
+        mongo localhost:27017/admin /etc/mongo/init-master.js
     fi
-
-  run.sh: |+
-    set -xe
     mongod --config /etc/mongo/mongod.conf
 
   livenessProbe.sh: |+
@@ -442,10 +441,14 @@ spec:
         - name: config-master
           mountPath: /mnt/config-dbs/
           readOnly: false
+        - name: data
+          mountPath: /var/lib/mongodb
+          readOnly: false
 
       containers:
       - name: mongo
-        image: noelmcloughlin/mongo
+        # image: noelmcloughlin/mongo
+        image: mongo
         imagePullPolicy: IfNotPresent
         command:
         - bash
@@ -556,7 +559,7 @@ spec:
           volume.beta.kubernetes.io/storage-class: local
       spec:
         storageClassName: local
-        accessModes: [ "ReadWriteOnce" ]
+        accessModes: [ "ReadWriteOnce", "ReadWriteMany" ]
         resources:
           requests:
             storage: 500m

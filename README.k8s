@@ -21,13 +21,13 @@
 
    * RUN
    minikube delete
-   minikube config set vm-driver hyperkit && minikube start --cpus 4 --memory 6144 --feature-gates="AllAlpha=true,BoundServiceAccountTokenVolume=false" --extra-config=apiserver.service-node-port-range=1-65535 --kubernetes-version=v1.18.3
+   minikube config set vm-driver hyperkit && minikube start --cpus 4 --memory 6144 --feature-gates="AllAlpha=true,BoundServiceAccountTokenVolume=false" --extra-config=apiserver.service-node-port-range=1-65535 --network-plugin=cni --extra-config=kubelet.network-plugin=cni --kubernetes-version=v1.18.3
    minikube addons enable ingress
 
 
 *  LINUX *
    *******
-   minikube start --cpus 4 --memory 6144 --feature-gates="AllAlpha=true,BoundServiceAccountTokenVolume=false"
+   minikube start --cpus 4 --memory 6144 --feature-gates="AllAlpha=true,BoundServiceAccountTokenVolume=false" --extra-config=apiserver.service-node-port-range=1-65535 --network-plugin=cni --extra-config=kubelet.network-plugin=cni --kubernetes-version=v1.18.3
 
 
 
