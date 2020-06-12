@@ -273,7 +273,7 @@ data:
     db.createUser(
       {
         user: "hello",
-        pwd: "fresh",
+        pwd: "world",
         roles: [
           {
             role: "readWrite",
@@ -381,7 +381,7 @@ data:
     if [ "$ORDINAL" -eq "0" ];then
         mongo localhost:27017/admin /mnt/conf.d/init-master.js
         # mongo localhost:27017/admin /mnt/conf.d/init-hello.js
-        echo >/dev/null 2>&1
+        echo >/dev/null 2>&1   # todo: delete me when working
     else
         mongo localhost:27017/admin /mnt/conf.d/init-slave.js
     fi
