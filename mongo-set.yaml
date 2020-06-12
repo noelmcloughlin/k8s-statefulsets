@@ -22,6 +22,7 @@
 #   https://kubernetes.io/docs/concepts/cluster-administration/logging
 #   https://doc.akka.io/docs/akka-management/current/bootstrap/kubernetes.html
 #   https://www.bogotobogo.com/DevOps/Docker/Docker_MongoDB_with_StatefulSets_on_GCP_Kubernetes.php
+#   https://stackoverflow.com/questions/25344834/cant-load-js-into-mongodb
 
 # STORAGE CLASS
 # ... delay volume binding until pods are scheduled
@@ -236,7 +237,8 @@ spec:
   selector:
     app: mongo
     type: mongo
-  type: LoadBalancer
+  type: ClusterIP
+  clusterIP: None
 
 ---
 # CONFIGMAPS
@@ -244,11 +246,11 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: config-master
+  name: config-db
   namespace: default
 data:
   init-master.js: |-
-    rs.initiate()
+    rs.initiate({})
     db.createUser(
       {
         user: "myadmin",
@@ -262,7 +264,12 @@ data:
       }
     )
 
+  init-slave.js: |-
+    rs.slaveOk()
+
   init-hello.js: |-
+    use hello-world
+    db.dropUser("hello", {w: "majority", wtimeout: 5000})
     db.createUser(
       {
         user: "hello",
@@ -303,8 +310,8 @@ data:
   mongod.conf.noauth: |-
     security:
        authorization: disabled
-  #  storage:
-  #     dbPath: /var/lib/mongodb
+    storage:
+       dbPath: /var/lib/mongodb
 
   mongod.conf: |-
     # mongod.conf
@@ -331,9 +338,9 @@ data:
          enabled: true
 
     # https://docs.mongodb.com/manual/core/authentication
-    security:
-       keyFile: /etc/mongo/keyfile
-       authorization: enabled
+    # security:
+    #    keyFile: /etc/mongo/keyfile
+    #    authorization: enabled
 
     replication:
        replSetName: rs0
@@ -346,34 +353,41 @@ data:
     ###################################################
     ## init service - copy each configmap individually
     ###################################################
-
-    ## configuration
     cp -p /mnt/config-init/mongod.conf /mnt/conf.d/mongod.conf
     cp -p /mnt/config-init/mongod.conf.noauth /mnt/conf.d/mongod.conf.noauth
-    cp -p /mnt/config-init/run.sh /mnt/conf.d/run.sh
+    cp -p /mnt/config-init/master.sh /mnt/conf.d/master.sh
     cp -p /mnt/config-init/livenessProbe.sh /mnt/conf.d/livenessProbe.sh
     cp -p /mnt/config-init/readinessProbe.sh /mnt/conf.d/readinessProbe.sh
     cp -p /mnt/config-init/keyfile /mnt/conf.d/keyfile
+
     chmod 400 /mnt/conf.d/keyfile
     chmod +x /mnt/conf.d/*.sh
-    chown mongodb /mnt/conf.d/run.sh /mnt/conf.d/mongod.conf
+    chown mongodb /mnt/conf.d/master.sh /mnt/conf.d/mongod.conf
 
-    ## initialization
-    cp -p /mnt/config-dbs/init-master.js /mnt/conf.d/init-master.js || true
-    cp -p /mnt/config-dbs/init-hello.js /mnt/conf.d/init-hello.js || true
+    cp -p /mnt/config-db/init-master.js /mnt/conf.d/init-master.js || true
+    cp -p /mnt/config-db/init-slave.js /mnt/conf.d/init-slave.js || true
+    cp -p /mnt/config-db/init-hello.js /mnt/conf.d/init-hello.js || true
 
-  run.sh: |+
-    set -xe
-    # initialize db
-    ORDINAL=1 && [ "${HOSTNAME}" = "mongo-0" ] && ORDINAL=0
+    ###############################################################
+    ## Bootstrap Stateful Set members (requires /etc/podinfo)
+    ###############################################################
+    mongod --config /mnt/conf.d/mongod.conf.noauth &
+    sleep 30
     if [ -f /etc/podinfo/pod_name ]; then
         ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
+    else
+        ORDINAL=1 && [ ${HOSTNAME} == 'redis-0' ] && ORDINAL=0
     fi
-    if [ "${HOSTNAME}" -eq "mongo-0" ]; then
-        mongod --config /etc/mongo/mongod.conf.noauth &
-        sleep 1
-        mongo localhost:27017/admin /etc/mongo/init-master.js
+    if [ "$ORDINAL" -eq "0" ];then
+        mongo localhost:27017/admin /mnt/conf.d/init-master.js
+        # mongo localhost:27017/admin /mnt/conf.d/init-hello.js
+        echo >/dev/null 2>&1
+    else
+        mongo localhost:27017/admin /mnt/conf.d/init-slave.js
     fi
+
+  master.sh: |+
+    set -xe
     mongod --config /etc/mongo/mongod.conf
 
   livenessProbe.sh: |+
@@ -427,7 +441,7 @@ spec:
         image: mongo
         imagePullPolicy: IfNotPresent
         command:
-        - sh
+        - bash
         - /mnt/config-init/init.sh
         volumeMounts:
         - name: conf
@@ -438,8 +452,8 @@ spec:
         - name: podinfo
           mountPath: /etc/podinfo/
           readOnly: false
-        - name: config-master
-          mountPath: /mnt/config-dbs/
+        - name: config-db
+          mountPath: /mnt/config-db/
           readOnly: false
         - name: data
           mountPath: /var/lib/mongodb
@@ -447,12 +461,11 @@ spec:
 
       containers:
       - name: mongo
-        # image: noelmcloughlin/mongo
-        image: mongo
+        image: noelmcloughlin/mongo
         imagePullPolicy: IfNotPresent
         command:
         - bash
-        - /etc/mongo/run.sh
+        - /etc/mongo/master.sh
         env:
         - name: ALLOW_EMPTY_PASSWORD
           value: "no"
@@ -529,9 +542,9 @@ spec:
       volumes:
       - name: conf
         emptyDir: {}
-      - name: config-master
+      - name: config-db
         configMap:
-          name: config-master
+          name: config-db
       - name: config-init
         configMap:
           name: mongo
