@@ -1,3 +1,4 @@
+#------------------------------------------------------------------
 #       Copyright 2020, noelmcloughlin
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,18 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-### If you wait to do everything until you're sure it's right,
-### you'll probably never do much of anything” ~ Win Borden
-
+###------------------------------------------------------------###
+### Deploys a mongoDB replicaset, five replicas, no sidecar.   ###
+### Uses official mongo docker image (wihtout the entrypoint). ###
+### The Persistent volumes should be empty on 1st apply.       ###
+###                                                            ###
+### From: https://github.com/noelmcloughlin/k8s-statefulsets   ###
+###                                                            ###
+### If you wait to do everything until you're sure it's right, ###
+### you'll probably never do much of anything” ~ Win Borden    ###
+###                                                            ###
+###------------------------------------------------------------###
 # refs:
 #   https://docs.mongodb.com/manual/replication/#replication-in-mongodb
 #   https://medium.com/codeops/how-to-setup-a-mongodb-replica-set-918f21da50ed
-#   https://docs.bmc.com/docs/digitalworkplaceadvanced/1802/configuring-mongodb-for-replica-set-788652018.html
 #   http://kubernetes.kansea.com/docs/user-guide/petset/bootstrapping
 #   https://kubernetes.io/docs/concepts/cluster-administration/logging
 #   https://doc.akka.io/docs/akka-management/current/bootstrap/kubernetes.html
 #   https://www.bogotobogo.com/DevOps/Docker/Docker_MongoDB_with_StatefulSets_on_GCP_Kubernetes.php
-#   https://stackoverflow.com/questions/25344834/cant-load-js-into-mongodb
+#   https://github.com/lijiaocn/k8s-mongo-petset/blob/master/mongo-init/entrypoint.sh
 
 # STORAGE CLASS
 # ... delay volume binding until pods are scheduled
@@ -33,7 +41,6 @@ metadata:
   name: local
   labels:
     type: local
-    tier: infra
     environ: test
   annotations:
     storageclass.beta.kubernetes.io/is-default-class: "true"
@@ -54,14 +61,49 @@ allowVolumeExpansion: false
 apiVersion: v1
 kind: PersistentVolume
 metadata:
+  name: mongo-pv0
+  labels:
+    app: mongo
+    bind: mongo
+  annotations:
+    "volume.alpha.kubernetes.io/node-affinity": '{
+      "requiredDuringSchedulingIgnoredDuringExecution": {
+        "nodeSelectorTerms": [
+          { "matchExpressions": [
+              { "key": "kubernetes.io/hostname",
+                "operator": "In",
+                "values": ["minikube"]
+              }
+          ]}
+        ]}}'
+spec:
+  capacity:
+    storage: 500Mi
+  accessModes:
+    - ReadWriteOnce
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local
+  hostPath:
+    type: DirectoryOrCreate
+    path: /tmp/mongo-pv0
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
   name: mongo-pv1
   labels:
     app: mongo
     bind: mongo
-    tier: infra
-    environ: test
   annotations:
-    #pv.beta.kubernetes.io/gid: "1234"
     "volume.alpha.kubernetes.io/node-affinity": '{
       "requiredDuringSchedulingIgnoredDuringExecution": {
         "nodeSelectorTerms": [
@@ -99,10 +141,7 @@ metadata:
   labels:
     app: mongo
     bind: mongo
-    tier: infra
-    environ: test
   annotations:
-    #pv.beta.kubernetes.io/gid: "1234"
     "volume.alpha.kubernetes.io/node-affinity": '{
       "requiredDuringSchedulingIgnoredDuringExecution": {
         "nodeSelectorTerms": [
@@ -140,10 +179,7 @@ metadata:
   labels:
     app: mongo
     bind: mongo
-    tier: infra
-    environ: test
   annotations:
-    #pv.beta.kubernetes.io/gid: "1234"
     "volume.alpha.kubernetes.io/node-affinity": '{
       "requiredDuringSchedulingIgnoredDuringExecution": {
         "nodeSelectorTerms": [
@@ -181,10 +217,7 @@ metadata:
   labels:
     app: mongo
     bind: mongo
-    tier: infra
-    environ: test
   annotations:
-    #pv.beta.kubernetes.io/gid: "1234"
     "volume.alpha.kubernetes.io/node-affinity": '{
       "requiredDuringSchedulingIgnoredDuringExecution": {
         "nodeSelectorTerms": [
@@ -223,21 +256,16 @@ apiVersion: v1
 kind: Service
 metadata:
   name: mongo
-  annotations:
-    service.alpha.kubernetes.io/tolerate-unready-endpoints: "false"
   labels:
-    app: mongo
-    environ: test
+    name: mongo
 spec:
   ports:
-  - name: mongo-default
-    port: 27017
-    protocol: TCP
-    targetPort: 27017
-  # selector:
-  #   app: mongo
-  #   type: mongo
-  type: ClusterIP
+    - name: mongo-default
+      port: 27017
+      protocol: TCP
+      targetPort: 27017
+  selector:
+    role: mongo
   clusterIP: None
 
 ---
@@ -246,48 +274,90 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: config-db
+  name: initcontainer
   namespace: default
 data:
-  init-master.js: |-
-    rs.initiate({})
-    db.createUser(
-      {
-        user: "myadmin",
-        pwd: "myadmin",
-        roles: [
-          {
-            role: "userAdminAnyDatabase",
-            db: "admin"
-          }
-        ]
-      }
-    )
+  utils.js: |+
+    function env(myenv, def) {
+       var ret= run("sh", "-c", `printenv -0 ${myenv} >/tmp/${myenv}.txt`);
+       if (ret != 0) return def;
+       return cat(`/tmp/${myenv}.txt`)
+    }
 
-  init-slave.js: |-
+  primary.js: |-
+    config = {
+        _id : "rs0",
+        members : [
+             {_id : 0, host : 'mongo-0.mongo.default.svc.cluster.local:27017', priority: 1000}
+        ]
+    };
+    rs.initiate(config);
+    sleep(1)
+
+  members.js: |-
+    sleep(1)
+    rs.add({_id : 1, host : 'mongo-1.mongo.default.svc.cluster.local:27017', priority: 1})
+    rs.add({_id : 2, host : 'mongo-2.mongo.default.svc.cluster.local:27017', priority: 2})
+    rs.add({_id : 3, host : 'mongo-3.mongo.default.svc.cluster.local:27017', priority: 3})
+    rs.add({_id : 4, host : 'mongo-4.mongo.default.svc.cluster.local:27017', priority: 4})
+    sleep(1)
+
+  secondary.js: |-
     rs.slaveOk()
 
-  init-hello.js: |-
-    use hello-world
-    db.dropUser("hello", {w: "majority", wtimeout: 5000})
+  users.js: |+
+    load('/mnt/state/init/utils.js');
     db.createUser(
       {
-        user: "hello",
-        pwd: "world",
+        user: env('MONGO_INITDB_ROOT_USERNAME'),
+        pwd: env('MONGO_INITDB_ROOT_PASSWORD'),
         roles: [
-          {
-            role: "readWrite",
-            db: "hello-world"
-          }
-        ]
-      }
-    )
+            { role: "root", db: env('MONGO_INITDB_DATABASE')},
+            { role: "clusterAdmin", db: env('MONGO_INITDB_DATABASE')},
+            { role: "__system", db: env('MONGO_INITDB_DATABASE')}
+        ] });
+    db.createUser(
+      {
+        user: env('MONGO_INITDB_DEF_USERNAME'),
+        pwd: env('MONGO_INITDB_DEF_PASSWORD'),
+        roles: [
+            { role: "root", db: env('MONGO_INITDB_DATABASE')},
+            { role: "clusterAdmin", db: env('MONGO_INITDB_DATABASE')}
+        ] });
+    sleep(1)
+
+  mongod.conf: |-
+    security:
+       # keyFile: /mnt/state/keyfile
+       authorization: disabled
+    storage:
+       dbPath: /var/lib/mongodb
+
+  runinit.sh: |+
+    set -xe
+    date >> /var/lib/mongodb/init.log
+    [ "${DELETE_EXISTING_DATA}" == "yes" ] && rm -rf /var/lib/mongodb/*
+    cp -p /mnt/initcontainer/* /mnt/state/init/
+    cp -p /mnt/runcontainer/* /mnt/state/
+    chmod 400 /mnt/state/keyfile || true
+    chown -R mongodb /mnt/state
+
+    mongod --config /mnt/state/init/mongod.conf &
+    sleep 1 # keepme or crash
+    mongo localhost:27017/${MONGO_INITDB_DATABASE} /mnt/state/init/users.js
+    u=${MONGO_INITDB_DEF_USERNAME} && p=${MONGO_INITDB_DEF_PASSWORD}
+    sleep 1 # keepme or crash
+    if [ "${HOSTNAME}" = "mongo-0" ]; then
+        mongo localhost:27017/${MONGO_INITDB_DATABASE} -u ${u} -p ${p} /mnt/state/init/primary.js
+    fi
+    sync && sleep 1 && sync
 
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: mongo
+  name: runcontainer
+  namespace: default
 data:
   keyfile: |-
     Te/urcU4Pww+duwgVsrntSUkZrIMCmak8LTDtm0L8SzLBQGeHP01RdQ/uhnwAdIb
@@ -307,88 +377,44 @@ data:
     zHZW/xUXkPL0AVqg9AHNnbMwrGNFsVM5RelC3iqntsO52OEr3jsdBrpHvA98WoRE
     x7KsV/EJMrBHZGMkwc37VBGdgov6r4pfLfOIOOPmaGp8LewK
 
-  mongod.conf.noauth: |-
-    security:
-       authorization: disabled
-    storage:
-       dbPath: /var/lib/mongodb
-
   mongod.conf: |-
     # mongod.conf
-
     # for documentation of all options, see:
     #   http://docs.mongodb.org/manual/reference/configuration-options/
-
     # Where and how to store data.
     storage:
        dbPath: /var/lib/mongodb
        journal:
         enabled: true
-    #  engine:
-    #  mmapv1:
-    #  wiredTiger:
-
     # network interfaces
     net:
-       # bindIp: '0.0.0.0,::'
        bindIpAll: true
        ipv6: true
        port: 27017
        unixDomainSocket:
          enabled: true
-
     # https://docs.mongodb.com/manual/core/authentication
-    # security:
-    #    keyFile: /etc/mongo/keyfile
-    #    authorization: enabled
-
+    security:
+       keyFile: /etc/mongo/keyfile
+       authorization: enabled
     replication:
        replSetName: rs0
-
     setParameter:
        diagnosticDataCollectionEnabled: false
 
-  init.sh: |+
+  run.sh: |+
     set -xe
-    ###################################################
-    ## init service - copy each configmap individually
-    ###################################################
-    cp -p /mnt/config-init/mongod.conf /mnt/conf.d/mongod.conf
-    cp -p /mnt/config-init/mongod.conf.noauth /mnt/conf.d/mongod.conf.noauth
-    cp -p /mnt/config-init/master.sh /mnt/conf.d/master.sh
-    cp -p /mnt/config-init/livenessProbe.sh /mnt/conf.d/livenessProbe.sh
-    cp -p /mnt/config-init/readinessProbe.sh /mnt/conf.d/readinessProbe.sh
-    cp -p /mnt/config-init/keyfile /mnt/conf.d/keyfile
-
-    chmod 400 /mnt/conf.d/keyfile
-    chmod +x /mnt/conf.d/*.sh
-    chown mongodb /mnt/conf.d/master.sh /mnt/conf.d/mongod.conf
-
-    cp -p /mnt/config-db/init-master.js /mnt/conf.d/init-master.js || true
-    cp -p /mnt/config-db/init-slave.js /mnt/conf.d/init-slave.js || true
-    cp -p /mnt/config-db/init-hello.js /mnt/conf.d/init-hello.js || true
-
-    ###############################################################
-    ## Bootstrap Stateful Set members (requires /etc/podinfo)
-    ###############################################################
-    mongod --config /mnt/conf.d/mongod.conf.noauth &
-    sleep 30
-    if [ -f /etc/podinfo/pod_name ]; then
-        ORDINAL="$( cat /etc/podinfo/pod_name | rev | cut -d- -f1 )"
+    mongod --config /etc/mongo/mongod.conf &
+    u=${MONGO_INITDB_DEF_USERNAME} && p=${MONGO_INITDB_DEF_PASSWORD}
+    sleep 5 # keepme or crash!
+    if [ "${HOSTNAME}" = "mongo-0" ]; then
+        mongo localhost:27017/${MONGO_INITDB_DATABASE} -u ${u} -p ${p} /etc/mongo/init/primary.js
+        sleep 5 # keepme or crash!
+        mongo localhost:27017/${MONGO_INITDB_DATABASE} -u ${u} -p ${p} /etc/mongo/init/members.js
     else
-        ORDINAL=1 && [ ${HOSTNAME} == 'redis-0' ] && ORDINAL=0
+        mongo localhost:27017/${MONGO_INITDB_DATABASE} -u ${u} -p ${p} /etc/mongo/init/secondary.js
     fi
-    if [ "$ORDINAL" -eq "0" ];then
-        mongo localhost:27017/admin /mnt/conf.d/init-master.js
-        # mongo localhost:27017/admin /mnt/conf.d/init-hello.js
-        echo >/dev/null 2>&1   # todo: delete me when working
-    else
-        mongo localhost:27017/admin /mnt/conf.d/init-slave.js
-    fi
-
-  master.sh: |+
-    set -xe
-    mongod --config /etc/mongo/mongod.conf
+    wait
 
   livenessProbe.sh: |+
     echo "mongo --eval db.adminCommand('ping')"    # todo: determine best check
@@ -405,12 +431,17 @@ metadata:
   name: mongo
 type: Opaque
 data:
-  MONGO_INITDB_ROOT_USERNAME: YWRtaW4=
-  MONGO_INITDB_ROOT_PASSWORD: YWRtaW4=
+  MONGO_INITDB_ROOT_USERNAME: bXlzeXN0ZW0=
+  MONGO_INITDB_ROOT_PASSWORD: bXlzeXN0ZW0=
+  MONGO_INITDB_DEF_USERNAME: bXlyb290
+  MONGO_INITDB_DEF_PASSWORD: bXlyb290
 stringData:
-  MONGO_INITDB_ROOT_USERNAME: admin
-  MONGO_INITDB_ROOT_PASSWORD: admin
+  MONGO_INITDB_ROOT_USERNAME: mysystem
+  MONGO_INITDB_ROOT_PASSWORD: mysystem
+  MONGO_INITDB_DEF_USERNAME: myroot
+  MONGO_INITDB_DEF_PASSWORD: myroot
   MONGO_INITDB_DATABASE: admin
+
 ---
 # STATEFULSET
 
@@ -418,87 +449,129 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: mongo
-  labels:
-    app: mongo
-    environ: test
 spec:
   serviceName: mongo
   replicas: 3
-  podManagementPolicy: OrderedReady
+  podManagementPolicy: Parallel  # OrderedReady
   selector:
     matchLabels:
-      app: mongo
+      role: mongo
       environ: test
   template:
     metadata:
       labels:
-        app: mongo
+        role: mongo
         environ: test
     spec:
       terminationGracePeriodSeconds: 10
+      shareProcessNamespace: true
       initContainers:
       - name: init
         image: mongo
         imagePullPolicy: IfNotPresent
         command:
         - bash
-        - /mnt/config-init/init.sh
+        - /mnt/initcontainer/runinit.sh
         volumeMounts:
-        - name: conf
-          mountPath: /mnt/conf.d/
+        - name: initstate
+          mountPath: /mnt/state/init/
           readOnly: false
-        - name: config-init
-          mountPath: /mnt/config-init/
+        - name: runstate
+          mountPath: /mnt/state/
+          readOnly: false
+        - name: initcontainer
+          mountPath: /mnt/initcontainer/
+          readOnly: false
+        - name: runcontainer
+          mountPath: /mnt/runcontainer/
+          readOnly: false
+        - name: dbdata
+          mountPath: /var/lib/mongodb
+          readOnly: false
         - name: podinfo
           mountPath: /etc/podinfo/
           readOnly: false
-        - name: config-db
-          mountPath: /mnt/config-db/
-          readOnly: false
-        - name: data
-          mountPath: /var/lib/mongodb
-          readOnly: false
+        env:
+          - name: DELETE_EXISTING_DATA
+            value: "yes"
+          - name: ALLOW_EMPTY_PASSWORD
+            value: "no"
+          - name: MONGO_INITDB_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: mongo
+                key: MONGO_INITDB_DATABASE
+          - name: MONGO_INITDB_ROOT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: mongo
+                key: MONGO_INITDB_ROOT_USERNAME
+          - name: MONGO_INITDB_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mongo
+                key: MONGO_INITDB_ROOT_PASSWORD
+          - name: MONGO_INITDB_DEF_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: mongo
+                key: MONGO_INITDB_DEF_USERNAME
+          - name: MONGO_INITDB_DEF_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mongo
+                key: MONGO_INITDB_DEF_PASSWORD
 
       containers:
       - name: mongo
-        image: noelmcloughlin/mongo
+        image: mongo
         imagePullPolicy: IfNotPresent
         command:
         - bash
-        - /etc/mongo/master.sh
+        - /etc/mongo/run.sh
         env:
-        - name: ALLOW_EMPTY_PASSWORD
-          value: "no"
-        - name: MONGO_INITDB_ROOT_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: mongo
-              key: MONGO_INITDB_ROOT_USERNAME
-        - name: MONGO_INITDB_ROOT_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: mongo
-              key: MONGO_INITDB_ROOT_PASSWORD
-        - name: MONGO_INITDB_DATABASE
-          valueFrom:
-            secretKeyRef:
-              name: mongo
-              key: MONGO_INITDB_DATABASE
-        - name: POD_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        - name: MY_POD_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
-        - name: MY_POD_IP
-          valueFrom:
-            fieldRef:
-              fieldPath: status.podIP
+          - name: DELETE_EXISTING_DATA
+            value: "no"
+          - name: MONGO_INITDB_DATABASE
+            valueFrom:
+              secretKeyRef:
+                name: mongo
+                key: MONGO_INITDB_DATABASE
+          - name: MONGO_INITDB_ROOT_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: mongo
+                key: MONGO_INITDB_ROOT_USERNAME
+          - name: MONGO_INITDB_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mongo
+                key: MONGO_INITDB_ROOT_PASSWORD
+          - name: MONGO_INITDB_DEF_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: mongo
+                key: MONGO_INITDB_DEF_USERNAME
+          - name: MONGO_INITDB_DEF_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mongo
+                key: MONGO_INITDB_DEF_PASSWORD
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
         ports:
-        - name: mongo-default
-          containerPort: 27017
+          - name: mongo-default
+            containerPort: 27017
         resources:
           limits:
             memory: 500Mi
@@ -516,7 +589,7 @@ spec:
             command:
             - bash
             - /etc/mongo/livenessProbe.sh
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
@@ -525,31 +598,35 @@ spec:
             command:
             - bash
             - /etc/mongo/readinessProbe.sh
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 2
           timeoutSeconds: 1
           failureThreshold: 3
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError # File
         volumeMounts:
-        - name: conf
-          mountPath: /etc/mongo
-          readOnly: false
-        - name: data
-          mountPath: /var/lib/mongodb
-          readOnly: false
+          - name: initstate
+            mountPath: /etc/mongo/init
+            readOnly: false
+          - name: runstate
+            mountPath: /etc/mongo
+            readOnly: false
+          - name: dbdata
+            mountPath: /var/lib/mongodb
+            readOnly: false
 
       volumes:
-      - name: conf
+      - name: initstate
         emptyDir: {}
-      - name: config-db
+      - name: runstate
+        emptyDir: {}
+      - name: initcontainer
         configMap:
-          name: config-db
-      - name: config-init
+          name: initcontainer
+      - name: runcontainer
         configMap:
-          name: mongo
+          name: runcontainer
       - name: podinfo
-        ## init containers may use this to find cluster peers
         downwardAPI:
           items:
             - path: "labels"
@@ -567,7 +644,7 @@ spec:
 
   volumeClaimTemplates:
     - metadata:
-        name: data
+        name: dbdata
         annotations:
           volume.beta.kubernetes.io/storage-class: local
       spec:

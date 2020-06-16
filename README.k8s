@@ -47,7 +47,7 @@
   kubectl get pods; kubectl logs -l app=redis
   kubectl delete -f redis-set.yaml
 
-* MONGODB *
+* MONGODB Replicaset (without sidecar) *
 
   kubectl apply -f mongo-set.yaml
   kubectl get pods; kubectl logs -l app=mongo
