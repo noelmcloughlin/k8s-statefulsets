@@ -14,16 +14,20 @@
 
 ###------------------------------------------------------------###
 ### Deploys a mongoDB replicaset, five replicas, no sidecar.   ###
-### Uses official mongo docker image (wihtout the entrypoint). ###
-### The Persistent volumes should be empty on 1st apply.       ###
+### Uses official mongo docker image (without the entrypoint). ###
 ###                                                            ###
-### From: https://github.com/noelmcloughlin/k8s-statefulsets   ###
-###                                                            ###
+### Author: noelmcloughlin                                     ###
 ### If you wait to do everything until you're sure it's right, ###
 ### you'll probably never do much of anything” ~ Win Borden    ###
 ###                                                            ###
 ###------------------------------------------------------------###
-# refs:
+
+###  Testing:
+
+# $ MONG=$(kubectl cluster-info |awk -F: '{print $2}' |sed -e s@/@@g |head -1)
+# $ mongo --host $MONG:27017 -u myroot -p myroot
+
+###  Refs:
 #   https://docs.mongodb.com/manual/replication/#replication-in-mongodb
 #   https://medium.com/codeops/how-to-setup-a-mongodb-replica-set-918f21da50ed
 #   http://kubernetes.kansea.com/docs/user-guide/petset/bootstrapping
@@ -31,6 +35,7 @@
 #   https://doc.akka.io/docs/akka-management/current/bootstrap/kubernetes.html
 #   https://www.bogotobogo.com/DevOps/Docker/Docker_MongoDB_with_StatefulSets_on_GCP_Kubernetes.php
 #   https://github.com/lijiaocn/k8s-mongo-petset/blob/master/mongo-init/entrypoint.sh
+#   https://kubernetes.io/docs/concepts/services-networking/dns-pod-service
 
 # STORAGE CLASS
 # ... delay volume binding until pods are scheduled
@@ -41,7 +46,6 @@ metadata:
   name: local
   labels:
     type: local
-    environ: test
   annotations:
     storageclass.beta.kubernetes.io/is-default-class: "true"
 # provisioner: kubernetes.io/no-provisioner
@@ -267,7 +271,23 @@ spec:
   selector:
     role: mongo
   clusterIP: None
-
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  labels:
+    name: mongodb
+spec:
+  type: NodePort
+  ports:
+    - name: mongo-default
+      protocol: TCP
+      port: 27017
+      nodePort: 27017
+      targetPort: 27017
+  selector:
+    role: mongo
 ---
 # CONFIGMAPS
 
@@ -289,8 +309,7 @@ data:
         _id : "rs0",
         members : [
              {_id : 0, host : 'mongo-0.mongo.default.svc.cluster.local:27017', priority: 1000}
-        ]
-    };
+        ] };
     rs.initiate(config);
     sleep(1)
 
@@ -456,12 +475,10 @@ spec:
   selector:
     matchLabels:
       role: mongo
-      environ: test
   template:
     metadata:
       labels:
         role: mongo
-        environ: test
     spec:
       terminationGracePeriodSeconds: 10
       shareProcessNamespace: true
@@ -537,16 +554,6 @@ spec:
               secretKeyRef:
                 name: mongo
                 key: MONGO_INITDB_DATABASE
-          - name: MONGO_INITDB_ROOT_USERNAME
-            valueFrom:
-              secretKeyRef:
-                name: mongo
-                key: MONGO_INITDB_ROOT_USERNAME
-          - name: MONGO_INITDB_ROOT_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: mongo
-                key: MONGO_INITDB_ROOT_PASSWORD
           - name: MONGO_INITDB_DEF_USERNAME
             valueFrom:
               secretKeyRef:
@@ -557,18 +564,6 @@ spec:
               secretKeyRef:
                 name: mongo
                 key: MONGO_INITDB_DEF_PASSWORD
-          - name: POD_NAMESPACE
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.namespace
-          - name: MY_POD_NAME
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.name
-          - name: MY_POD_IP
-            valueFrom:
-              fieldRef:
-                fieldPath: status.podIP
         ports:
           - name: mongo-default
             containerPort: 27017

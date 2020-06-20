@@ -1,9 +1,9 @@
-   
+
    **************
    MINIKUBE NOTES
    **************
 
-*  MACOS * 
+*  MACOS *
    *****
    Change versions to your preference.
 
@@ -12,7 +12,7 @@
    brew install hyperkit docker-machine-driver-hyperkit
    sudo chown root:wheel /usr/local/bin/docker-machine-driver-hyperkit
    sudo chmod u+s /usr/local/bin/docker-machine-driver-hyperkit
-   
+
    * UPGRADE
    ## Note: Docker Desktop includes hyperkit so upgrade Docker Desktop instead. ##
    brew upgrade hyperkit && brew link --overwrite hyperkit
@@ -39,7 +39,8 @@
 
   kubectl apply -f mysql-wordpress-set.yaml
   kubectl get pods; kubectl logs -l app=mysql,wordpress    # todo: check syntax for multiples?
-  kubectl delete -f mysql-wordpress-set.yaml 
+  kubectl delete -f mysql-wordpress-set.yaml
+
 
 * REDIS *
 
@@ -47,10 +48,15 @@
   kubectl get pods; kubectl logs -l app=redis
   kubectl delete -f redis-set.yaml
 
+
 * MONGODB Replicaset (without sidecar) *
 
   kubectl apply -f mongo-set.yaml
   kubectl get pods; kubectl logs -l app=mongo
+
+   MONG=$(kubectl cluster-info |awk -F: '{print $2}' |sed -e s@/@@g |head -1)
+   mongo --host $MONG:27017 -u myroot -p myroot
+
   kubectl delete -f mongo-set.yaml
 
 
